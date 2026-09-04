@@ -119,6 +119,9 @@ void MAX30102_Init(void)
     //    - 平均采样 = 1（不平均）
     //    - FIFO 回卷等参数保持默认
     MAX30102_WriteRegister(REG_FIFO_CONFIG, 0x00);
+    MAX30102_WriteRegister(REG_FIFO_WR_PTR, 0x00);
+    MAX30102_WriteRegister(REG_OVF_COUNTER, 0x00);
+    MAX30102_WriteRegister(REG_FIFO_RD_PTR, 0x00);
 
     // 4. 配置 SpO2 模式
     //    - ADC_RGE = 00 (4096 nA)
@@ -163,8 +166,8 @@ uint8_t MAX30102_ReadFIFO(uint32_t *red, uint32_t *ir, uint8_t *count)
     uint8_t num_samples;
 
     // 获取当前的写/读指针
-    wr_ptr = MAX30102_ReadRegister(REG_FIFO_WR_PTR);
-    rd_ptr = MAX30102_ReadRegister(REG_FIFO_RD_PTR);
+    wr_ptr = MAX30102_ReadRegister(REG_FIFO_WR_PTR) & 0x1F;
+    rd_ptr = MAX30102_ReadRegister(REG_FIFO_RD_PTR) & 0x1F;
 
     // 计算有效采样数（处理回卷情况）
     if (wr_ptr >= rd_ptr)
@@ -188,15 +191,15 @@ uint8_t MAX30102_ReadFIFO(uint32_t *red, uint32_t *ir, uint8_t *count)
         // --- 写寄存器地址（指向 FIFO_DATA）---
         MX30102_I2C_Start();
         MX30102_I2C_SendByte(MAX30102_WRITE_ADDR);
-        MX30102_I2C_ReceiveAck();  // 忽略 ACK
+        if (MX30102_I2C_ReceiveAck()) { MX30102_I2C_Stop(); return 1; }
         MX30102_I2C_SendByte(REG_FIFO_DATA);
-        MX30102_I2C_ReceiveAck();
+        if (MX30102_I2C_ReceiveAck()) { MX30102_I2C_Stop(); return 1; }
         MX30102_I2C_Stop();        // 释放总线
 
         // --- 开始读取 6 个字节 ---
         MX30102_I2C_Start();
         MX30102_I2C_SendByte(MAX30102_READ_ADDR);
-        MX30102_I2C_ReceiveAck();
+        if (MX30102_I2C_ReceiveAck()) { MX30102_I2C_Stop(); return 1; }
 
         for (uint8_t j = 0; j < SAMPLE_BYTES; j++) {
             data[j] = MX30102_ReceiveByte();
@@ -208,8 +211,8 @@ uint8_t MAX30102_ReadFIFO(uint32_t *red, uint32_t *ir, uint8_t *count)
         MX30102_I2C_Stop();
 
         // 组合成 18 位值（高位在前）
-        red[i] = ((uint32_t)data[0] << 16) | ((uint32_t)data[1] << 8) | data[2];
-        ir[i]  = ((uint32_t)data[3] << 16) | ((uint32_t)data[4] << 8) | data[5];
+        red[i] = (((uint32_t)data[0] & 0x03) << 16) | ((uint32_t)data[1] << 8) | data[2];
+        ir[i]  = (((uint32_t)data[3] & 0x03) << 16) | ((uint32_t)data[4] << 8) | data[5];
     }
 
     *count = num_samples;

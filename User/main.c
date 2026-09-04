@@ -45,18 +45,44 @@ volatile int16_t  HR_Wave[HR_WAVE_LEN];
 volatile uint8_t  HR_WavePos;
 
 /* ---------------- heart-rate detector ---------------- */
-#define HR_AMP_THRESHOLD    800     /* AC amplitude above which a beat counts */
-#define HR_MIN_INTERVAL_MS  400     /* >= 150 bpm */
+#define HR_SAMPLE_PERIOD_MS 10      /* MAX30102 configured at 100 Hz */
+#define HR_FINGER_THRESHOLD 10000   /* IR DC level indicating finger contact */
+#define HR_AMP_THRESHOLD    500     /* AC amplitude above which a beat counts */
+#define HR_MIN_INTERVAL_MS  333     /* <= 180 bpm */
 #define HR_MAX_INTERVAL_MS  2000    /* >= 30 bpm */
+#define HR_INTERVAL_COUNT   4
 
 static int32_t  hrDc;
 static int32_t  hrLastAc;
 static uint16_t hrBpm;
 static uint32_t hrLastBeatMs;
+static uint16_t hrIntervals[HR_INTERVAL_COUNT];
+static uint8_t  hrIntervalPos;
+static uint8_t  hrIntervalCount;
+static uint8_t  hrHasBeat;
 
-static void HeartRate_Feed(int32_t ir)
+static void HeartRate_Reset(void)
+{
+	hrDc = 0;
+	hrLastAc = 0;
+	hrBpm = 0;
+	hrLastBeatMs = 0;
+	hrIntervalPos = 0;
+	hrIntervalCount = 0;
+	hrHasBeat = 0;
+}
+
+static void HeartRate_Feed(int32_t ir, uint32_t sampleMs)
 {
 	int32_t ac;
+	uint8_t i;
+	uint32_t intervalSum = 0;
+
+	if (ir < HR_FINGER_THRESHOLD)
+	{
+		HeartRate_Reset();
+		return;
+	}
 
 	if (hrDc == 0)
 	{
@@ -67,15 +93,25 @@ static void HeartRate_Feed(int32_t ir)
 
 	if ((ac > HR_AMP_THRESHOLD) && (hrLastAc <= HR_AMP_THRESHOLD))
 	{
-		uint32_t now = xTaskGetTickCount();
-		uint32_t dt = now - hrLastBeatMs;
+		uint32_t dt = sampleMs - hrLastBeatMs;
 
-		if ((dt >= HR_MIN_INTERVAL_MS) && (dt <= HR_MAX_INTERVAL_MS))
+		if (!hrHasBeat)
 		{
-			hrBpm = (uint16_t)(60000UL / dt);
-			gHeartRateLastValidMs = now;
+			hrHasBeat = 1;
 		}
-		hrLastBeatMs = now;
+		else if ((dt >= HR_MIN_INTERVAL_MS) && (dt <= HR_MAX_INTERVAL_MS))
+		{
+			hrIntervals[hrIntervalPos] = (uint16_t)dt;
+			hrIntervalPos = (uint8_t)((hrIntervalPos + 1) % HR_INTERVAL_COUNT);
+			if (hrIntervalCount < HR_INTERVAL_COUNT) { hrIntervalCount++; }
+			for (i = 0; i < hrIntervalCount; i++)
+			{
+				intervalSum += hrIntervals[i];
+			}
+			hrBpm = (uint16_t)(60000UL / (intervalSum / hrIntervalCount));
+			gHeartRateLastValidMs = (uint32_t)xTaskGetTickCount();
+		}
+		hrLastBeatMs = sampleMs;
 	}
 	hrLastAc = ac;
 
@@ -129,7 +165,9 @@ void HeartRate_Task(void *pvParameters)
 {
 	uint32_t red[32];
 	uint32_t ir[32];
+	uint32_t lastSampleMs = 0;
 	uint8_t count, i;
+	uint8_t sampleTimeValid = 0;
 
 	for (;;)
 	{
@@ -137,9 +175,16 @@ void HeartRate_Task(void *pvParameters)
 		{
 			if (MAX30102_ReadFIFO(red, ir, &count) == 0)
 			{
+				if (!sampleTimeValid)
+				{
+					lastSampleMs = (uint32_t)xTaskGetTickCount() -
+						(uint32_t)(count - 1) * HR_SAMPLE_PERIOD_MS;
+					sampleTimeValid = 1;
+				}
 				for (i = 0; i < count; i++)
 				{
-					HeartRate_Feed((int32_t)ir[i]);
+					if (i != 0) { lastSampleMs += HR_SAMPLE_PERIOD_MS; }
+					HeartRate_Feed((int32_t)ir[i], lastSampleMs);
 				}
 				gHeartRate = hrBpm;
 			}
