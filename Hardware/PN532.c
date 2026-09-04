@@ -335,8 +335,8 @@ uint8_t PN532_ReadPassiveTargetID(uint8_t *uid, uint8_t *uidLen,
 	{
 		return 1;
 	}
-	/* resp = [nbTg][Tg][status][SENS0][SENS1][SEL][UIDlen][UID...] */
-	if (respLen < 7)
+	/* resp = [nbTg][Tg][SENS0][SENS1][SEL][UIDlen][UID...] */
+	if (respLen < 6)
 	{
 		return 1;
 	}
@@ -345,12 +345,17 @@ uint8_t PN532_ReadPassiveTargetID(uint8_t *uid, uint8_t *uidLen,
 		return 1;
 	}
 
-	if (uidLen) *uidLen = resp[6];
+	/* UID length is byte 5; bytes 6 onward contain the UID. */
+	if (resp[5] == 0 || resp[5] > 8 || respLen < (uint8_t)(6 + resp[5]))
+	{
+		return 1;
+	}
+	if (uidLen) *uidLen = resp[5];
 	if (uid)
 	{
-		for (i = 0; i < resp[6] && i < 8; i++)
+		for (i = 0; i < resp[5]; i++)
 		{
-			uid[i] = resp[7 + i];
+			uid[i] = resp[6 + i];
 		}
 	}
 	return 0;

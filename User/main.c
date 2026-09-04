@@ -142,11 +142,25 @@ void NFC_Task(void *pvParameters)
 {
 	uint8_t uid[8];
 	uint8_t uidLen = 0;
+	uint8_t nfcReady = 0;
 	uint32_t lastPoll = 0;
 	uint8_t i;
 
+	(void)pvParameters;
+
 	for (;;)
 	{
+		/* SAM configuration must run after the scheduler has started. */
+		if (!nfcReady)
+		{
+			nfcReady = (PN532_SAMConfig() == 0);
+			if (!nfcReady)
+			{
+				vTaskDelay(pdMS_TO_TICKS(500));
+				continue;
+			}
+		}
+
 		if (((uint32_t)xTaskGetTickCount() - lastPoll) >= 1000)
 		{
 			lastPoll = (uint32_t)xTaskGetTickCount();
