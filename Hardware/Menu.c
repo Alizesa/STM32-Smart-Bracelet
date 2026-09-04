@@ -354,12 +354,28 @@ static void Screen_Wake(void)
 	LastActivityMs = (uint32_t)xTaskGetTickCount();
 }
 
+/* These pages represent an unfinished operation rather than an idle screen. */
+static uint8_t Screen_PageNeedsAttention(void)
+{
+	if (CurPage == PAGE_HEART || CurPage == PAGE_NFC)
+	{
+		return 1;
+	}
+	return (CurPage == PAGE_TIMESET && TimeAdjusting) ? 1 : 0;
+}
+
 static void Screen_CheckTimeout(void)
 {
 	uint32_t now = (uint32_t)xTaskGetTickCount();
 
 	if (!ScreenOn)
 	{
+		return;
+	}
+	/* Do not interrupt measurements, card polling, or an active time edit. */
+	if (Screen_PageNeedsAttention())
+	{
+		LastActivityMs = now;
 		return;
 	}
 	/* 最近有运动, 或刚按过键 → 保持亮屏 */
