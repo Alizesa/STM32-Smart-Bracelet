@@ -25,6 +25,7 @@ extern volatile uint8_t  gTemperature;
 extern volatile uint8_t  gDhtError;
 extern volatile uint32_t gSteps;
 extern volatile uint16_t gHeartRate;
+extern volatile uint32_t gHeartRateLastValidMs;
 extern volatile uint8_t  gNfcDetected;
 extern volatile uint8_t  gNfcUidLen;
 extern volatile uint8_t  gNfcUid[8];
@@ -100,9 +101,11 @@ static uint8_t ScreenOn = 1;
 static uint32_t LastActivityMs = 0;
 #define SCREEN_AUTO_OFF_MS    10000   /* 无运动且无按键 10s 后自动息屏 */
 #define SCREEN_WAKE_MOTION_MS 600     /* 息屏时检测到该窗口内的运动即亮屏 */
+#define HEART_MEASURE_TIMEOUT_MS 15000
 
 /* 跌倒告警弹窗 */
 static uint8_t FallAlertActive = 0;
+static uint32_t HeartMeasureStartMs = 0;
 
 /* ---------------- 小工具函数 ---------------- */
 
@@ -291,6 +294,10 @@ static void MenuEnter_Step(void)
 	{
 		Entering = 0;
 		CurPage = MenuItem_ToPage(EnterTarget);
+		if (CurPage == PAGE_HEART)
+		{
+			HeartMeasureStartMs = (uint32_t)xTaskGetTickCount();
+		}
 		OLED_Clear();
 		OLED_Update();
 	}
@@ -429,6 +436,12 @@ static void Draw_Waveform(void)
 
 static void Draw_Heart(void)
 {
+	uint32_t nowMs = (uint32_t)xTaskGetTickCount();
+	uint32_t lastValidMs = gHeartRateLastValidMs;
+	uint8_t hasNewRate = (lastValidMs != 0xFFFFFFFFUL) &&
+		((int32_t)(lastValidMs - HeartMeasureStartMs) >= 0);
+	uint8_t hasRecentRate = hasNewRate &&
+		((uint32_t)(nowMs - lastValidMs) < HEART_MEASURE_TIMEOUT_MS);
 	uint8_t beat = (uint8_t)((FrameCount / 4) % 4);
 	int16_t heartY = 30;
 	if (beat == 1) { heartY = 29; }
@@ -438,8 +451,19 @@ static void Draw_Heart(void)
 	OLED_Clear();
 	OLED_ShowImage(0, 0, 16, 16, GoBack);
 	OLED_ShowString(24, 0, "心率", OLED_8X16);
-	OLED_ShowString(64, 0, "BPM", OLED_6X8);
-	OLED_ShowNum(96, 0, gHeartRate, 3, OLED_8X16);
+	if (hasRecentRate)
+	{
+		OLED_ShowString(64, 0, "BPM", OLED_6X8);
+		OLED_ShowNum(96, 0, gHeartRate, 3, OLED_8X16);
+	}
+	else if ((uint32_t)(nowMs - HeartMeasureStartMs) >= HEART_MEASURE_TIMEOUT_MS)
+	{
+		OLED_ShowString(64, 0, "TIMEOUT", OLED_6X8);
+	}
+	else
+	{
+		OLED_ShowString(64, 0, "WAIT", OLED_6X8);
+	}
 
 	Draw_HeartShape(16, heartY);
 	Draw_Waveform();

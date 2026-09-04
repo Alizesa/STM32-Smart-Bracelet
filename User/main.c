@@ -34,6 +34,7 @@ volatile uint8_t  gTemperature;
 volatile uint8_t  gDhtError;
 volatile uint32_t gSteps;
 volatile uint16_t gHeartRate;
+volatile uint32_t gHeartRateLastValidMs = 0xFFFFFFFFUL;
 volatile uint8_t  gNfcDetected;
 volatile uint8_t  gNfcUidLen;
 volatile uint8_t  gNfcUid[8];
@@ -72,6 +73,7 @@ static void HeartRate_Feed(int32_t ir)
 		if ((dt >= HR_MIN_INTERVAL_MS) && (dt <= HR_MAX_INTERVAL_MS))
 		{
 			hrBpm = (uint16_t)(60000UL / dt);
+			gHeartRateLastValidMs = now;
 		}
 		hrLastBeatMs = now;
 	}
