@@ -35,6 +35,7 @@ volatile uint8_t  gDhtError;
 volatile uint32_t gSteps;
 volatile uint16_t gHeartRate;
 volatile uint32_t gHeartRateLastValidMs = 0xFFFFFFFFUL;
+volatile uint8_t  gHeartMeasureActive;
 volatile uint8_t  gHeartSensorOk;
 volatile uint8_t  gHeartFingerPresent;
 volatile uint32_t gHeartSampleCount;
@@ -174,6 +175,7 @@ void HeartRate_Task(void *pvParameters)
 	uint32_t lastSampleMs = 0;
 	uint8_t count, i;
 	uint8_t sampleTimeValid = 0;
+	uint8_t wasMeasuring = 0;
 
 	(void)pvParameters;
 	HeartRate_Reset();
@@ -183,6 +185,24 @@ void HeartRate_Task(void *pvParameters)
 
 	for (;;)
 	{
+		if (!gHeartMeasureActive)
+		{
+			wasMeasuring = 0;
+			vTaskDelay(pdMS_TO_TICKS(50));
+			continue;
+		}
+
+		if (!wasMeasuring)
+		{
+			HeartRate_Reset();
+			MAX30102_ClearFIFO();
+			gHeartRate = 0;
+			gHeartRateLastValidMs = 0xFFFFFFFFUL;
+			gHeartFingerPresent = 0;
+			sampleTimeValid = 0;
+			wasMeasuring = 1;
+		}
+
 		if (MAX30102_IsDataReady())
 		{
 			if (MAX30102_ReadFIFO(red, ir, &count) == 0)

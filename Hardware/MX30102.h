@@ -10,6 +10,7 @@ uint8_t MAX30102_GetPartID(void);
 uint8_t MAX30102_GetRevisionID(void);
 void MAX30102_Reset(void);
 void MAX30102_Init(void);
+void MAX30102_ClearFIFO(void);
 
 uint8_t MAX30102_IsDataReady(void);
 uint8_t MAX30102_ReadFIFO(uint32_t *red, uint32_t *ir, uint8_t *count);

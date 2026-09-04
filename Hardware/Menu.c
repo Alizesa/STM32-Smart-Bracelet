@@ -26,6 +26,7 @@ extern volatile uint8_t  gDhtError;
 extern volatile uint32_t gSteps;
 extern volatile uint16_t gHeartRate;
 extern volatile uint32_t gHeartRateLastValidMs;
+extern volatile uint8_t  gHeartMeasureActive;
 extern volatile uint8_t  gHeartSensorOk;
 extern volatile uint8_t  gHeartFingerPresent;
 extern volatile uint32_t gHeartSampleCount;
@@ -104,7 +105,7 @@ static uint8_t ScreenOn = 1;
 static uint32_t LastActivityMs = 0;
 #define SCREEN_AUTO_OFF_MS    10000   /* 无运动且无按键 10s 后自动息屏 */
 #define SCREEN_WAKE_MOTION_MS 600     /* 息屏时检测到该窗口内的运动即亮屏 */
-#define HEART_MEASURE_TIMEOUT_MS 15000
+#define HEART_MEASURE_DURATION_MS 15000
 
 /* 跌倒告警弹窗 */
 static uint8_t FallAlertActive = 0;
@@ -302,6 +303,7 @@ static void MenuEnter_Step(void)
 		{
 			HeartMeasureStartMs = (uint32_t)xTaskGetTickCount();
 			HeartMeasureStartSamples = gHeartSampleCount;
+			gHeartMeasureActive = 1;
 		}
 		OLED_Clear();
 		OLED_Update();
@@ -347,6 +349,7 @@ static void SimplePage_Handle(uint8_t key)
 {
 	if (key == KEY3_SHORT || key == KEY3_LONG)
 	{
+		if (CurPage == PAGE_HEART) { gHeartMeasureActive = 0; }
 		CurPage = PAGE_MENU;
 		AnimOffset = 0;
 		MoveState = 0;
@@ -370,7 +373,7 @@ static void Screen_Wake(void)
 /* These pages represent an unfinished operation rather than an idle screen. */
 static uint8_t Screen_PageNeedsAttention(void)
 {
-	if (CurPage == PAGE_HEART || CurPage == PAGE_NFC)
+	if ((CurPage == PAGE_HEART && gHeartMeasureActive) || CurPage == PAGE_NFC)
 	{
 		return 1;
 	}
@@ -445,8 +448,6 @@ static void Draw_Heart(void)
 	uint32_t lastValidMs = gHeartRateLastValidMs;
 	uint8_t hasNewRate = (lastValidMs != 0xFFFFFFFFUL) &&
 		((int32_t)(lastValidMs - HeartMeasureStartMs) >= 0);
-	uint8_t hasRecentRate = hasNewRate &&
-		((uint32_t)(nowMs - lastValidMs) < HEART_MEASURE_TIMEOUT_MS);
 	uint8_t beat = (uint8_t)((FrameCount / 4) % 4);
 	int16_t heartY = 30;
 	if (beat == 1) { heartY = 29; }
@@ -456,30 +457,36 @@ static void Draw_Heart(void)
 	OLED_Clear();
 	OLED_ShowImage(0, 0, 16, 16, GoBack);
 	OLED_ShowString(24, 0, "心率", OLED_8X16);
+	if (gHeartMeasureActive &&
+		((uint32_t)(nowMs - HeartMeasureStartMs) >= HEART_MEASURE_DURATION_MS))
+	{
+		gHeartMeasureActive = 0;
+	}
 	if (!gHeartSensorOk)
 	{
 		OLED_ShowString(64, 0, "NO SENSOR", OLED_6X8);
 	}
-	else if (gHeartSampleCount == HeartMeasureStartSamples)
+	else if (gHeartMeasureActive &&
+		(gHeartSampleCount == HeartMeasureStartSamples))
 	{
 		OLED_ShowString(64, 0, "NO FIFO", OLED_6X8);
 	}
-	else if (!gHeartFingerPresent)
+	else if (gHeartMeasureActive && !gHeartFingerPresent)
 	{
 		OLED_ShowString(64, 0, "NO FINGER", OLED_6X8);
 	}
-	else if (hasRecentRate)
+	else if (gHeartMeasureActive)
+	{
+		OLED_ShowString(64, 0, "MEASURE", OLED_6X8);
+	}
+	else if (hasNewRate)
 	{
 		OLED_ShowString(64, 0, "BPM", OLED_6X8);
 		OLED_ShowNum(96, 0, gHeartRate, 3, OLED_8X16);
 	}
-	else if ((uint32_t)(nowMs - HeartMeasureStartMs) >= HEART_MEASURE_TIMEOUT_MS)
-	{
-		OLED_ShowString(64, 0, "TIMEOUT", OLED_6X8);
-	}
 	else
 	{
-		OLED_ShowString(64, 0, "WAIT", OLED_6X8);
+		OLED_ShowString(64, 0, "TIMEOUT", OLED_6X8);
 	}
 
 	Draw_HeartShape(16, heartY);

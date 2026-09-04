@@ -143,6 +143,13 @@ void MAX30102_Init(void)
     Delay_ms(100);
 }
 
+void MAX30102_ClearFIFO(void)
+{
+    MAX30102_WriteRegister(REG_FIFO_WR_PTR, 0x00);
+    MAX30102_WriteRegister(REG_OVF_COUNTER, 0x00);
+    MAX30102_WriteRegister(REG_FIFO_RD_PTR, 0x00);
+}
+
 /**
  * @brief 检查 FIFO 是否有新数据
  * @retval 1 有数据，0 无数据
