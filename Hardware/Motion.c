@@ -64,7 +64,7 @@ void Motion_Init(void)
 /**
   * @brief 初始化MPU6050 INT引脚对应的EXTI(抬腕/跌倒硬件中断).
   * @note  需先把MPU6050的INT脚飞线到 PinMap.h 中 MPU6050_INT_* 指定的引脚(默认PB12)。
-  *        使用上升+下降双边沿, 兼容高/低有效两种INT输出。
+  *        MPU6050配置为高有效锁存中断，只使用上升沿触发。
   */
 void Motion_IntPinInit(void)
 {
@@ -84,7 +84,7 @@ void Motion_IntPinInit(void)
 
 	EXTI_InitStructure.EXTI_Line = MPU6050_INT_EXTI_LINE;
 	EXTI_InitStructure.EXTI_Mode = EXTI_Mode_Interrupt;
-	EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Rising_Falling;
+	EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Rising;
 	EXTI_InitStructure.EXTI_LineCmd = ENABLE;
 	EXTI_Init(&EXTI_InitStructure);
 
@@ -162,7 +162,12 @@ void Motion_Update(int16_t ax, int16_t ay, int16_t az, uint32_t now_ms)
 
 		MotionIntFlag = 0;
 		st = MPU6050_ReadIntStatus();
-		if (st & 0x40) { HwFreeFallMs = now_ms; }    /* 自由落体中断(用于跌倒立即亮屏) */
+		if (st & 0x40)
+		{
+			HwFreeFallMs = now_ms;
+			FallAlarm = 1;
+			FallAlarmTime = now_ms;
+		}
 		if (st & 0x80)
 		{
 			FallAlarm = 1;
