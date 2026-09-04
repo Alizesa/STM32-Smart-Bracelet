@@ -137,7 +137,7 @@ static void Draw_Clock(void)
 
 	OLED_ShowString(0, 48, "菜单", OLED_8X16);
 	OLED_ShowString(96, 48, "设置", OLED_8X16);
-	OLED_ShowImage(112, 0, 16, 16, Heart_16);
+	OLED_ShowImage(112, 0, 16, 16, Battery);
 
 	if (ClockSel == 1)
 	{
@@ -391,13 +391,12 @@ static void Screen_CheckTimeout(void)
 
 /* ---------------- 心率页面 ---------------- */
 
-/* 用两个圆 + 一个三角形拼出跳动的心脏 */
-static void Draw_HeartShape(int16_t CX, int16_t CY, uint8_t R)
+/* 使用固定比例的16x16心形点阵，通过位移表现心跳。 */
+static void Draw_HeartShape(int16_t CX, int16_t CY)
 {
-	OLED_DrawCircle(CX - R, CY, R, OLED_FILLED);
-	OLED_DrawCircle(CX + R, CY, R, OLED_FILLED);
-	OLED_DrawTriangle(CX - R * 2, CY, CX + R * 2, CY,
-	                  CX, CY + R * 2, OLED_FILLED);
+	int16_t x = CX - 8;
+	int16_t y = CY - 8;
+	OLED_ShowImage(x, y, 16, 16, Heart_16);
 }
 
 static void Draw_Waveform(void)
@@ -429,7 +428,11 @@ static void Draw_Waveform(void)
 
 static void Draw_Heart(void)
 {
-	uint8_t r = (uint8_t)(5 + (FrameCount / 8) % 3);    /* 5~7 跳动 */
+	uint8_t beat = (uint8_t)((FrameCount / 4) % 4);
+	int16_t heartY = 30;
+	if (beat == 1) { heartY = 29; }
+	else if (beat == 2) { heartY = 28; }
+	else if (beat == 3) { heartY = 29; }
 
 	OLED_Clear();
 	OLED_ShowImage(0, 0, 16, 16, GoBack);
@@ -437,7 +440,7 @@ static void Draw_Heart(void)
 	OLED_ShowString(64, 0, "BPM", OLED_6X8);
 	OLED_ShowNum(96, 0, gHeartRate, 3, OLED_8X16);
 
-	Draw_HeartShape(16, 30, r);
+	Draw_HeartShape(16, heartY);
 	Draw_Waveform();
 	OLED_Update();
 }
