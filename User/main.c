@@ -367,7 +367,10 @@ void Bluetooth_Task(void *pvParameters)
 		if (((uint32_t)xTaskGetTickCount() - lastLinkTest) >= 1000)
 		{
 			lastLinkTest = (uint32_t)xTaskGetTickCount();
-			HC05_SendString("BT:ONLINE\r\n");
+			sprintf(txBuf, "BT:ONLINE RX:%lu ERR:%lu\r\n",
+				(unsigned long)HC05_GetRxByteCount(),
+				(unsigned long)HC05_GetRxErrorCount());
+			HC05_SendString(txBuf);
 		}
 
 		/* 每5秒主动向手机上报外设监测数据(心率/计步/温湿度/NFC/抬腕/跌倒) */

@@ -7,6 +7,8 @@ void HC05_Init(void);
 void HC05_SendByte(uint8_t data);
 void HC05_SendString(char *str);
 uint16_t HC05_RxAvailable(void);
+uint32_t HC05_GetRxByteCount(void);
+uint32_t HC05_GetRxErrorCount(void);
 
 /**
   * @brief  Receive one byte with timeout.

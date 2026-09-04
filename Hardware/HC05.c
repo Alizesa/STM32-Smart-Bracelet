@@ -22,6 +22,8 @@
 static volatile uint8_t  RxBuf[HC05_RX_BUF_SIZE];
 static volatile uint16_t RxHead;
 static volatile uint16_t RxTail;
+static volatile uint32_t RxByteCount;
+static volatile uint32_t RxErrorCount;
 static SemaphoreHandle_t RxSem;
 
 /**
@@ -35,6 +37,8 @@ void HC05_Init(void)
 
 	RxHead = 0;
 	RxTail = 0;
+	RxByteCount = 0;
+	RxErrorCount = 0;
 
 	/* counting semaphore mirrors the number of bytes in the ring buffer */
 	RxSem = xSemaphoreCreateCounting(HC05_RX_BUF_SIZE, 0);
@@ -113,6 +117,16 @@ uint16_t HC05_RxAvailable(void)
 	return count;
 }
 
+uint32_t HC05_GetRxByteCount(void)
+{
+	return RxByteCount;
+}
+
+uint32_t HC05_GetRxErrorCount(void)
+{
+	return RxErrorCount;
+}
+
 /**
   * @brief  Receive one byte, blocking up to timeout_ms.
   * @param  timeout_ms  wait time in ticks units accepted by FreeRTOS
@@ -147,10 +161,17 @@ void HC05_USART_IRQHandler(void)
 {
 	portBASE_TYPE xHigherPriorityTaskWoken = pdFALSE;
 	uint16_t next;
+	uint16_t status = HC05_USART->SR;
+
+	if (status & (USART_SR_ORE | USART_SR_NE | USART_SR_FE | USART_SR_PE))
+	{
+		RxErrorCount++;
+	}
 
 	if (USART_GetITStatus(HC05_USART, USART_IT_RXNE) != RESET)
 	{
 		uint8_t data = (uint8_t)USART_ReceiveData(HC05_USART);
+		RxByteCount++;
 
 		next = (RxHead + 1) & (HC05_RX_BUF_SIZE - 1);
 		if (next != RxTail)                 /* buffer not full */
