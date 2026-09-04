@@ -86,8 +86,10 @@ uint8_t DHT11_Read(uint8_t *pHumidity, uint8_t *pTemperature)
 			/* every bit starts with a ~50us low level */
 			if (DHT11_WaitLevel(0, 100)) { DHT11_LastError = 3; ret = 1; goto out; }
 
-			/* sample after 40us: 26-28us high => "0", ~70us high => "1" */
-			Delay_us(40);
+			/* Synchronize to the rising edge, then sample in the middle of
+			 * the short/long high pulse. 30us leaves margin for both values. */
+			if (DHT11_WaitLevel(1, 100)) { DHT11_LastError = 3; ret = 1; goto out; }
+			Delay_us(30);
 			if (GPIO_ReadInputDataBit(DHT11_GPIO_PORT, DHT11_GPIO_PIN))
 			{
 				data[i] |= (0x80 >> j);
