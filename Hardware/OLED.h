@@ -12,6 +12,11 @@
 #define OLED_6X8				6
 #define OLED_12X24				12
 
+/* SSD1306 128x64 uses column 0 directly; SH1106 modules may override this. */
+#ifndef OLED_COLUMN_OFFSET
+#define OLED_COLUMN_OFFSET		0
+#endif
+
 /*IsFilled参数数值*/
 #define OLED_UNFILLED			0
 #define OLED_FILLED				1

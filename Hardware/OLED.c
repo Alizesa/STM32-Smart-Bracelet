@@ -330,11 +330,8 @@ void OLED_DisplayOff(void)
   */
 void OLED_SetCursor(uint8_t Page, uint8_t X)
 {
-	/*如果使用此程序驱动1.3寸的OLED显示屏，则需要解除此注释*/
-	/*因为1.3寸的OLED驱动芯片（SH1106）有132列*/
-	/*屏幕的起始列接在了第2列，而不是第0列*/
-	/*所以需要将X加2，才能正常显示*/
-	X += 2;
+	/* SSD1306 starts at column 0; SH1106 users can set OLED_COLUMN_OFFSET. */
+	X += OLED_COLUMN_OFFSET;
 	
 	/*通过指令设置页地址和列地址*/
 	OLED_WriteCommand(0xB0 | Page);					//设置页位置
@@ -464,6 +461,27 @@ void OLED_UpdateArea(int16_t X, int16_t Y, uint8_t Width, uint8_t Height)
 {
 	int16_t j;
 	int16_t Page, Page1;
+	int16_t Right;
+
+	/* Clip the transfer to the physical 128-column display. */
+	if (Width == 0 || Height == 0 || X >= 128 || X + Width <= 0)
+	{
+		return;
+	}
+	if (X < 0)
+	{
+		Width = (uint8_t)(Width + X);
+		X = 0;
+	}
+	Right = X + Width;
+	if (Right > 128)
+	{
+		Width = (uint8_t)(128 - X);
+	}
+	if (Width == 0)
+	{
+		return;
+	}
 	
 	/*负数坐标在计算页地址时需要加一个偏移*/
 	/*(Y + Height - 1) / 8 + 1的目的是(Y + Height) / 8并向上取整*/
