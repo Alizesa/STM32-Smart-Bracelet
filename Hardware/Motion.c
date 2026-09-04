@@ -188,6 +188,8 @@ static void Fall_Update(float mag, uint32_t now_ms)
 			postImpact = 1;
 			postImpactTime = now_ms;
 			maxDev = 0;
+			armed = 0;
+			return;     /* 冲击帧不应计入后续的静止窗口 */
 		}
 		armed = 0;
 	}
