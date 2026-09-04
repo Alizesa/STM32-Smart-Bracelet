@@ -117,22 +117,23 @@ void MAX30102_Init(void)
 
     // 3. 配置 FIFO
     //    - 平均采样 = 1（不平均）
-    //    - FIFO 回卷等参数保持默认
-    MAX30102_WriteRegister(REG_FIFO_CONFIG, 0x00);
+    //    - FIFO 回卷使任务短暂延迟时不会停止采样
+    //    - FIFO 几乎满阈值 = 15
+    MAX30102_WriteRegister(REG_FIFO_CONFIG, 0x1F);
     MAX30102_WriteRegister(REG_FIFO_WR_PTR, 0x00);
     MAX30102_WriteRegister(REG_OVF_COUNTER, 0x00);
     MAX30102_WriteRegister(REG_FIFO_RD_PTR, 0x00);
 
     // 4. 配置 SpO2 模式
-    //    - ADC_RGE = 00 (4096 nA)
-    //    - SR     = 011 (100 Hz)
+    //    - ADC_RGE = 01 (4096 nA)
+    //    - SR     = 001 (100 Hz)
     //    - LED_PW = 011 (400 us)
-    //    组合成 0b01101100 = 0x6C
-    MAX30102_WriteRegister(REG_SPO2_CONFIG, 0x6C);
+    //    组合成 0b00100111 = 0x27
+    MAX30102_WriteRegister(REG_SPO2_CONFIG, 0x27);
 
-    // 5. 配置 LED 电流（红光和红外，默认值 0x1F ~ 13mA）
-    MAX30102_WriteRegister(REG_LED1_PA, 0x1F);
-    MAX30102_WriteRegister(REG_LED2_PA, 0x1F);
+    // 5. 配置 LED 电流（红光和红外，0x24 约 7.2mA）
+    MAX30102_WriteRegister(REG_LED1_PA, 0x24);
+    MAX30102_WriteRegister(REG_LED2_PA, 0x24);
     MAX30102_WriteRegister(REG_PILOT_PA, 0x00);
 
     // 6. 设置为 SpO2 模式（MODE[2:0] = 011）
