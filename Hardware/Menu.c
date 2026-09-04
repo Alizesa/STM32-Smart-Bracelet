@@ -26,6 +26,9 @@ extern volatile uint8_t  gDhtError;
 extern volatile uint32_t gSteps;
 extern volatile uint16_t gHeartRate;
 extern volatile uint32_t gHeartRateLastValidMs;
+extern volatile uint8_t  gHeartSensorOk;
+extern volatile uint8_t  gHeartFingerPresent;
+extern volatile uint32_t gHeartSampleCount;
 extern volatile uint8_t  gNfcDetected;
 extern volatile uint8_t  gNfcUidLen;
 extern volatile uint8_t  gNfcUid[8];
@@ -106,6 +109,7 @@ static uint32_t LastActivityMs = 0;
 /* 跌倒告警弹窗 */
 static uint8_t FallAlertActive = 0;
 static uint32_t HeartMeasureStartMs = 0;
+static uint32_t HeartMeasureStartSamples = 0;
 
 /* ---------------- 小工具函数 ---------------- */
 
@@ -297,6 +301,7 @@ static void MenuEnter_Step(void)
 		if (CurPage == PAGE_HEART)
 		{
 			HeartMeasureStartMs = (uint32_t)xTaskGetTickCount();
+			HeartMeasureStartSamples = gHeartSampleCount;
 		}
 		OLED_Clear();
 		OLED_Update();
@@ -451,7 +456,19 @@ static void Draw_Heart(void)
 	OLED_Clear();
 	OLED_ShowImage(0, 0, 16, 16, GoBack);
 	OLED_ShowString(24, 0, "心率", OLED_8X16);
-	if (hasRecentRate)
+	if (!gHeartSensorOk)
+	{
+		OLED_ShowString(64, 0, "NO SENSOR", OLED_6X8);
+	}
+	else if (gHeartSampleCount == HeartMeasureStartSamples)
+	{
+		OLED_ShowString(64, 0, "NO FIFO", OLED_6X8);
+	}
+	else if (!gHeartFingerPresent)
+	{
+		OLED_ShowString(64, 0, "NO FINGER", OLED_6X8);
+	}
+	else if (hasRecentRate)
 	{
 		OLED_ShowString(64, 0, "BPM", OLED_6X8);
 		OLED_ShowNum(96, 0, gHeartRate, 3, OLED_8X16);

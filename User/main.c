@@ -35,6 +35,9 @@ volatile uint8_t  gDhtError;
 volatile uint32_t gSteps;
 volatile uint16_t gHeartRate;
 volatile uint32_t gHeartRateLastValidMs = 0xFFFFFFFFUL;
+volatile uint8_t  gHeartSensorOk;
+volatile uint8_t  gHeartFingerPresent;
+volatile uint32_t gHeartSampleCount;
 volatile uint8_t  gNfcDetected;
 volatile uint8_t  gNfcUidLen;
 volatile uint8_t  gNfcUid[8];
@@ -78,11 +81,14 @@ static void HeartRate_Feed(int32_t ir, uint32_t sampleMs)
 	uint8_t i;
 	uint32_t intervalSum = 0;
 
+	gHeartSampleCount++;
 	if (ir < HR_FINGER_THRESHOLD)
 	{
+		gHeartFingerPresent = 0;
 		HeartRate_Reset();
 		return;
 	}
+	gHeartFingerPresent = 1;
 
 	if (hrDc == 0)
 	{
@@ -173,6 +179,7 @@ void HeartRate_Task(void *pvParameters)
 	HeartRate_Reset();
 	gHeartRate = 0;
 	gHeartRateLastValidMs = 0xFFFFFFFFUL;
+	gHeartFingerPresent = 0;
 
 	for (;;)
 	{
@@ -383,6 +390,7 @@ int main(void)
 	Key_Init();                 /* PB1/PA6/PA4 */
 	MPU6050_Init();             /* PB10/PB11 */
 	MAX30102_Init();            /* PB6/PB7 */
+	gHeartSensorOk = (MAX30102_GetPartID() == 0x15) ? 1 : 0;
 	DHT11_Init();               /* PA1 */
 	HC05_Init();                /* USART1 PA9/PA10 */
 	PN532_Init();               /* USART2 PA2/PA3 */
