@@ -30,11 +30,12 @@
 #define RAISE_DWELL_MS      200         /* 保持面向使用者 200ms 才确认 */
 
 /* ---- 跌倒阈值 (LSB) ---- */
-#define FALL_FREE_LSB       350         /* < ~0.17g 视为自由落体 */
-#define FALL_IMPACT_LSB     6500        /* > ~3.2g  视为落地冲击 */
-#define FALL_FREE_MS        120         /* 自由落体需持续 120ms */
-#define FALL_STILL_MS       1500        /* 冲击后静止观察窗口 */
-#define FALL_STILL_LSB      450         /* 窗口内偏离1g的容差 */
+#define FALL_FREE_LSB       900         /* < ~0.44g 视为失重 */
+#define FALL_IMPACT_LSB     4200        /* > ~2.0g 视为撞击 */
+#define FALL_FREE_MS        40          /* 失重需持续 40ms */
+#define FALL_STILL_MS       800         /* 冲击后静止观察窗口 */
+#define FALL_STILL_LSB      600         /* 窗口内偏离1g的容差 */
+#define FALL_IMPACT_WINDOW_MS 700       /* 剧烈运动到撞击的最大间隔 */
 #define FALL_CLEAR_MS       8000        /* 跌倒告警自动复位时间 */
 
 /* ---- 运动检测 (用于运动亮屏/静止自动息屏) ---- */
@@ -179,9 +180,10 @@ static void Fall_Update(float mag, uint32_t now_ms)
 	}
 	else
 	{
-		/* 自由落体结束后, 若出现高冲击则认为摔倒 */
-		if (armed && (uint32_t)(now_ms - armTime) >= FALL_FREE_MS &&
-			mag > FALL_IMPACT_LSB)
+		/* 自由落体后的撞击，或剧烈运动后的撞击，均进入静止确认。 */
+		if (mag > FALL_IMPACT_LSB &&
+			((armed && (uint32_t)(now_ms - armTime) >= FALL_FREE_MS) ||
+			 ((uint32_t)(now_ms - LastMotionMs) < FALL_IMPACT_WINDOW_MS)))
 		{
 			postImpact = 1;
 			postImpactTime = now_ms;
