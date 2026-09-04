@@ -31,6 +31,7 @@
 /* (Menu.c 通过 extern 引用以下变量) */
 volatile uint8_t  gHumidity;
 volatile uint8_t  gTemperature;
+volatile uint8_t  gDhtError;
 volatile uint32_t gSteps;
 volatile uint16_t gHeartRate;
 volatile uint8_t  gNfcDetected;
@@ -107,8 +108,13 @@ void Sensor_Task(void *pvParameters)
 			lastDht = (uint32_t)xTaskGetTickCount();
 			if (DHT11_Read(&hum, &temp) == 0)
 			{
+				gDhtError = 0;
 				gHumidity = hum;
 				gTemperature = temp;
+			}
+			else
+			{
+				gDhtError = DHT11_GetLastError();
 			}
 		}
 

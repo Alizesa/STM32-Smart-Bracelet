@@ -14,6 +14,8 @@
 #include "PinMap.h"
 #include "DHT11.h"
 
+static volatile uint8_t DHT11_LastError;
+
 /**
   * @brief  Initialise the DHT11 data pin (open-drain, released high).
   */
@@ -61,6 +63,7 @@ uint8_t DHT11_Read(uint8_t *pHumidity, uint8_t *pTemperature)
 	uint8_t data[5] = {0, 0, 0, 0, 0};
 	uint8_t i, j;
 	uint8_t ret = 0;
+	DHT11_LastError = 0;
 
 	/* ---- host start signal: pull low > 18ms ---- */
 	GPIO_ResetBits(DHT11_GPIO_PORT, DHT11_GPIO_PIN);
@@ -72,8 +75,8 @@ uint8_t DHT11_Read(uint8_t *pHumidity, uint8_t *pTemperature)
 	Delay_us(40);
 
 	/* DHT11 response: 80us low then 80us high */
-	if (DHT11_WaitLevel(0, 100)) { ret = 1; goto out; }
-	if (DHT11_WaitLevel(1, 100)) { ret = 1; goto out; }
+	if (DHT11_WaitLevel(0, 100)) { DHT11_LastError = 1; ret = 1; goto out; }
+	if (DHT11_WaitLevel(1, 100)) { DHT11_LastError = 2; ret = 1; goto out; }
 
 	/* read 40 data bits */
 	for (i = 0; i < 5; i++)
@@ -81,7 +84,7 @@ uint8_t DHT11_Read(uint8_t *pHumidity, uint8_t *pTemperature)
 		for (j = 0; j < 8; j++)
 		{
 			/* every bit starts with a ~50us low level */
-			if (DHT11_WaitLevel(0, 100)) { ret = 1; goto out; }
+			if (DHT11_WaitLevel(0, 100)) { DHT11_LastError = 3; ret = 1; goto out; }
 
 			/* sample after 40us: 26-28us high => "0", ~70us high => "1" */
 			Delay_us(40);
@@ -106,10 +109,16 @@ out:
 	/* checksum: h_int + h_dec + t_int + t_dec (low byte) */
 	if ((uint8_t)(data[0] + data[1] + data[2] + data[3]) != data[4])
 	{
+		DHT11_LastError = 4;
 		return 1;
 	}
 
 	*pHumidity    = data[0];   /* integer humidity % */
 	*pTemperature = data[2];   /* integer temperature C */
 	return 0;
+}
+
+uint8_t DHT11_GetLastError(void)
+{
+	return DHT11_LastError;
 }

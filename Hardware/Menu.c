@@ -22,6 +22,7 @@
 /* ---------------- 由 main.c 各任务产生的共享数据 ---------------- */
 extern volatile uint8_t  gHumidity;
 extern volatile uint8_t  gTemperature;
+extern volatile uint8_t  gDhtError;
 extern volatile uint32_t gSteps;
 extern volatile uint16_t gHeartRate;
 extern volatile uint8_t  gNfcDetected;
@@ -512,6 +513,11 @@ static void Draw_Data(void)
 	OLED_ShowString(56, 40, "H:", OLED_6X8);
 	OLED_ShowNum(72, 40, gHumidity, 2, OLED_6X8);
 	OLED_ShowChar(86, 40, '%', OLED_6X8);
+	if (gDhtError)
+	{
+		OLED_ShowString(96, 40, "E", OLED_6X8);
+		OLED_ShowNum(102, 40, gDhtError, 1, OLED_6X8);
+	}
 
 	OLED_ShowString(8, 52, "HR:", OLED_6X8);
 	OLED_ShowNum(24, 52, gHeartRate, 3, OLED_6X8);

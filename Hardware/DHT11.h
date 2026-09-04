@@ -13,4 +13,8 @@ void DHT11_Init(void);
   */
 uint8_t DHT11_Read(uint8_t *pHumidity, uint8_t *pTemperature);
 
+/* 0=success, 1=response low timeout, 2=response high timeout,
+ * 3=data low timeout, 4=checksum error. */
+uint8_t DHT11_GetLastError(void);
+
 #endif
