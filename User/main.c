@@ -46,8 +46,8 @@ volatile uint8_t  HR_WavePos;
 
 /* ---------------- heart-rate detector ---------------- */
 #define HR_SAMPLE_PERIOD_MS 10      /* MAX30102 configured at 100 Hz */
-#define HR_FINGER_THRESHOLD 10000   /* IR DC level indicating finger contact */
-#define HR_AMP_THRESHOLD    500     /* AC amplitude above which a beat counts */
+#define HR_FINGER_THRESHOLD 1000    /* IR DC level indicating finger contact */
+#define HR_AMP_THRESHOLD    80      /* AC amplitude above which a beat counts */
 #define HR_MIN_INTERVAL_MS  333     /* <= 180 bpm */
 #define HR_MAX_INTERVAL_MS  2000    /* >= 30 bpm */
 #define HR_INTERVAL_COUNT   4
@@ -168,6 +168,11 @@ void HeartRate_Task(void *pvParameters)
 	uint32_t lastSampleMs = 0;
 	uint8_t count, i;
 	uint8_t sampleTimeValid = 0;
+
+	(void)pvParameters;
+	HeartRate_Reset();
+	gHeartRate = 0;
+	gHeartRateLastValidMs = 0xFFFFFFFFUL;
 
 	for (;;)
 	{
