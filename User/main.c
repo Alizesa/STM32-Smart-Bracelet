@@ -92,6 +92,9 @@ void Sensor_Task(void *pvParameters)
 	uint8_t hum = 0, temp = 0;
 	uint32_t lastDht = 0;
 
+	/* DHT11 needs at least 1s after power-up before its first sample. */
+	vTaskDelay(pdMS_TO_TICKS(1000));
+
 	for (;;)
 	{
 		MPU6050_GetData(&ax, &ay, &az, &gx, &gy, &gz);

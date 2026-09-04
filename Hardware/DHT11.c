@@ -90,8 +90,8 @@ uint8_t DHT11_Read(uint8_t *pHumidity, uint8_t *pTemperature)
 				data[i] |= (0x80 >> j);
 			}
 
-			/* wait for the high level to finish */
-			if (DHT11_WaitLevel(1, 100)) { ret = 1; goto out; }
+			/* The next bit starts with low; do not wait for high here.
+			 * For a logic-0 bit the high pulse has already ended at 40us. */
 		}
 	}
 
