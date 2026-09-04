@@ -27,6 +27,8 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
+#define BLUETOOTH_REPORT_INTERVAL_MS 10000
+
 /* ---------------- shared data ---------------- */
 /* (Menu.c 通过 extern 引用以下变量) */
 volatile uint8_t  gHumidity;
@@ -336,7 +338,6 @@ void Bluetooth_Task(void *pvParameters)
 	char rxBuf[64];
 	char txBuf[96];
 	uint8_t idx = 0;
-	uint32_t lastLinkTest = 0;
 	uint32_t lastReport = 0;
 
 	(void)pvParameters;
@@ -346,7 +347,6 @@ void Bluetooth_Task(void *pvParameters)
 		if (HC05_RxAvailable() > 0)
 		{
 			char ch = (char)HC05_ReceiveByte(pdMS_TO_TICKS(50));
-			HC05_SendByte((uint8_t)ch);
 
 			if (ch == '\r' || ch == '\n')
 			{
@@ -363,18 +363,8 @@ void Bluetooth_Task(void *pvParameters)
 			}
 		}
 
-		/* Short periodic marker verifies STM32-to-phone UART independently. */
-		if (((uint32_t)xTaskGetTickCount() - lastLinkTest) >= 1000)
-		{
-			lastLinkTest = (uint32_t)xTaskGetTickCount();
-			sprintf(txBuf, "BT:ONLINE RX:%lu ERR:%lu\r\n",
-				(unsigned long)HC05_GetRxByteCount(),
-				(unsigned long)HC05_GetRxErrorCount());
-			HC05_SendString(txBuf);
-		}
-
-		/* 每5秒主动向手机上报外设监测数据(心率/计步/温湿度/NFC/抬腕/跌倒) */
-		if (((uint32_t)xTaskGetTickCount() - lastReport) >= 5000)
+		/* 周期上报监测数据，手机也可随时发送命令查询。 */
+		if (((uint32_t)xTaskGetTickCount() - lastReport) >= BLUETOOTH_REPORT_INTERVAL_MS)
 		{
 			lastReport = (uint32_t)xTaskGetTickCount();
 			sprintf(txBuf, "DATA:HR=%u STEPS=%lu T=%d H=%d NFC=%s RAISE=%u FALL=%u\r\n",
