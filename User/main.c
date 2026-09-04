@@ -336,13 +336,17 @@ void Bluetooth_Task(void *pvParameters)
 	char rxBuf[64];
 	char txBuf[96];
 	uint8_t idx = 0;
+	uint32_t lastLinkTest = 0;
 	uint32_t lastReport = 0;
+
+	(void)pvParameters;
 
 	for (;;)
 	{
 		if (HC05_RxAvailable() > 0)
 		{
 			char ch = (char)HC05_ReceiveByte(pdMS_TO_TICKS(50));
+			HC05_SendByte((uint8_t)ch);
 
 			if (ch == '\r' || ch == '\n')
 			{
@@ -357,6 +361,13 @@ void Bluetooth_Task(void *pvParameters)
 			{
 				rxBuf[idx++] = ch;
 			}
+		}
+
+		/* Short periodic marker verifies STM32-to-phone UART independently. */
+		if (((uint32_t)xTaskGetTickCount() - lastLinkTest) >= 1000)
+		{
+			lastLinkTest = (uint32_t)xTaskGetTickCount();
+			HC05_SendString("BT:ONLINE\r\n");
 		}
 
 		/* 每5秒主动向手机上报外设监测数据(心率/计步/温湿度/NFC/抬腕/跌倒) */
