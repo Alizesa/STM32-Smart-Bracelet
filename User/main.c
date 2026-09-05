@@ -41,6 +41,7 @@ volatile uint8_t  gHeartMeasureActive;
 volatile uint8_t  gHeartSensorOk;
 volatile uint8_t  gHeartFingerPresent;
 volatile uint32_t gHeartSampleCount;
+volatile uint8_t  gNfcOnline;
 volatile uint8_t  gNfcDetected;
 volatile uint8_t  gNfcUidLen;
 volatile uint8_t  gNfcUid[8];
@@ -233,6 +234,7 @@ void NFC_Task(void *pvParameters)
 	uint8_t uid[8];
 	uint8_t uidLen = 0;
 	uint8_t nfcReady = 0;
+	uint8_t ic, ver, rev, support;
 	uint32_t lastPoll = 0;
 	uint8_t i;
 
@@ -243,7 +245,9 @@ void NFC_Task(void *pvParameters)
 		/* SAM configuration must run after the scheduler has started. */
 		if (!nfcReady)
 		{
-			nfcReady = (PN532_SAMConfig() == 0);
+			nfcReady = (PN532_GetFirmwareVersion(&ic, &ver, &rev, &support) == 0 &&
+						PN532_SAMConfig() == 0);
+			gNfcOnline = nfcReady;
 			if (!nfcReady)
 			{
 				vTaskDelay(pdMS_TO_TICKS(500));
@@ -315,7 +319,11 @@ static void Bluetooth_ProcessCommand(char *cmd)
 	}
 	else if (cmd[0] == 'N' || cmd[0] == 'n')
 	{
-		if (gNfcDetected)
+		if (!gNfcOnline)
+		{
+			HC05_SendString("NFC:OFFLINE CHECK UART\r\n");
+		}
+		else if (gNfcDetected)
 		{
 			uint8_t i;
 			HC05_SendString("NFC:YES UID:");

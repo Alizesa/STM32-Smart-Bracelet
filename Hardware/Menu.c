@@ -30,6 +30,7 @@ extern volatile uint8_t  gHeartMeasureActive;
 extern volatile uint8_t  gHeartSensorOk;
 extern volatile uint8_t  gHeartFingerPresent;
 extern volatile uint32_t gHeartSampleCount;
+extern volatile uint8_t  gNfcOnline;
 extern volatile uint8_t  gNfcDetected;
 extern volatile uint8_t  gNfcUidLen;
 extern volatile uint8_t  gNfcUid[8];
@@ -505,7 +506,13 @@ static void Draw_Nfc(void)
 	OLED_ShowString(24, 0, "门禁", OLED_8X16);
 	OLED_ShowString(56, 0, "NFC", OLED_6X8);
 
-	if (gNfcDetected)
+	if (!gNfcOnline)
+	{
+		OLED_ShowImage(8, 24, 16, 16, Card_16);
+		OLED_ShowString(32, 20, "NO LINK", OLED_8X16);
+		OLED_ShowString(8, 44, "CHECK UART", OLED_6X8);
+	}
+	else if (gNfcDetected)
 	{
 		OLED_ShowImage(8, 24, 16, 16, Door_16);
 		OLED_ShowString(32, 20, "OPEN", OLED_8X16);
