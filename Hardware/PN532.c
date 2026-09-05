@@ -323,10 +323,10 @@ uint8_t PN532_SAMConfig(void)
 	return 0;
 }
 
-uint8_t PN532_ReadPassiveTargetID(uint8_t *uid, uint8_t *uidLen,
-		uint32_t timeout_ms)
+uint8_t PN532_ReadPassiveTargetIDType(uint8_t brTy, uint8_t *uid,
+		uint8_t *uidLen, uint32_t timeout_ms)
 {
-	uint8_t tx[2] = {0x01, 0x00};           /* MaxTg=1, 106kbps type A */
+	uint8_t tx[2] = {0x01, brTy};            /* MaxTg=1, selected technology */
 	uint8_t resp[64];
 	uint8_t respLen = 0;
 	uint8_t i;
@@ -335,8 +335,7 @@ uint8_t PN532_ReadPassiveTargetID(uint8_t *uid, uint8_t *uidLen,
 	{
 		return 1;
 	}
-	/* resp = [nbTg][Tg][SENS0][SENS1][SEL][UIDlen][UID...] */
-	if (respLen < 6)
+	if (respLen < 1)
 	{
 		return 1;
 	}
@@ -345,20 +344,44 @@ uint8_t PN532_ReadPassiveTargetID(uint8_t *uid, uint8_t *uidLen,
 		return 1;
 	}
 
-	/* UID length is byte 5; bytes 6 onward contain the UID. */
-	if (resp[5] == 0 || resp[5] > 8 || respLen < (uint8_t)(6 + resp[5]))
+	if (brTy == 0x00)                       /* NFC-A: [NbTg][Tg][SENS][SEL][UIDlen][UID] */
 	{
-		return 1;
-	}
-	if (uidLen) *uidLen = resp[5];
-	if (uid)
-	{
-		for (i = 0; i < resp[5]; i++)
+		if (respLen < 6 || resp[5] == 0 || resp[5] > 8 ||
+			respLen < (uint8_t)(6 + resp[5]))
 		{
-			uid[i] = resp[6 + i];
+			return 1;
 		}
+		if (uidLen) *uidLen = resp[5];
+		if (uid)
+		{
+			for (i = 0; i < resp[5]; i++) uid[i] = resp[6 + i];
+		}
+		return 0;
 	}
-	return 0;
+
+	if (brTy == 0x03)                       /* NFC-B: PUPI is the 4-byte identifier */
+	{
+		if (respLen < 6) return 1;
+		if (uidLen) *uidLen = 4;
+		if (uid) for (i = 0; i < 4; i++) uid[i] = resp[2 + i];
+		return 0;
+	}
+
+	if (brTy == 0x01 || brTy == 0x02)       /* FeliCa: NFCID2 starts after response code */
+	{
+		if (respLen < 11) return 1;
+		if (uidLen) *uidLen = 8;
+		if (uid) for (i = 0; i < 8; i++) uid[i] = resp[3 + i];
+		return 0;
+	}
+
+	return 1;
+}
+
+uint8_t PN532_ReadPassiveTargetID(uint8_t *uid, uint8_t *uidLen,
+		uint32_t timeout_ms)
+{
+	return PN532_ReadPassiveTargetIDType(0x00, uid, uidLen, timeout_ms);
 }
 
 uint8_t PN532_InRelease(void)
