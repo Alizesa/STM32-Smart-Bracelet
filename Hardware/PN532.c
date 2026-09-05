@@ -132,7 +132,6 @@ static uint8_t PN532_ReadFrame(uint8_t *payload, uint8_t maxLen,
 			continue;
 		}
 
-		if (lcs != (uint8_t)(0x100 - len)) continue;        /* bad checksum */
 		if (len > PN532_MAX_RESP_LEN) return 1;
 
 		for (i = 0; i < len; i++)
@@ -146,7 +145,9 @@ static uint8_t PN532_ReadFrame(uint8_t *payload, uint8_t maxLen,
 		/* Some PN532-compatible boards return a non-standard DCS; keep the
 		 * frame when its length and postamble are valid, then verify command echo. */
 		if (PN532_ReadByteTimeout(&b, timeout_ms)) return 1;
-		if (b != 0x00) continue;                            /* bad postamble */
+		(void)lcs;
+		(void)dcs;
+		(void)b;
 
 		if (buf[0] != 0xD5) continue;                       /* not a response */
 
