@@ -112,19 +112,19 @@ void MPU6050_GetData(int16_t *AccX, int16_t *AccY, int16_t *AccZ,
 }
 
 /**
- * @brief  使能MPU6050硬件运动/自由落体中断
+  * @brief  使能MPU6050硬件运动/自由落体中断(INT引脚输出高有效50us脉冲)
   * @param  motionEn    1-使能运动检测中断(抬腕等动作)
   * @param  freeFallEn  1-使能自由落体中断(跌倒初期)
-  * @note   INT_PIN_CFG=0x20: 推挽输出,高有效,中断锁存至读INT_STATUS清除。
+  * @note   INT_PIN_CFG=0x00: 推挽输出,高有效,50us脉冲,读INT_STATUS自动清除
   *         阈值单位1LSB≈2mg(±16g量程), 以下为起始值, 需实机微调:
   *           FF_THR=10(~20mg) FF_DUR=20(20ms)
-  *           MOT_THR=8(~16mg) MOT_DUR=1(1ms)
+  *           MOT_THR=40(~80mg) MOT_DUR=10(10ms)
   */
 void MPU6050_EnableInt(uint8_t motionEn, uint8_t freeFallEn)
 {
 	uint8_t enable = 0;
 
-	MPU6050_WriteReg(MPU6050_INT_PIN_CFG, 0x20);
+	MPU6050_WriteReg(MPU6050_INT_PIN_CFG, 0x00);
 
 	if (freeFallEn)
 	{
@@ -134,8 +134,8 @@ void MPU6050_EnableInt(uint8_t motionEn, uint8_t freeFallEn)
 	}
 	if (motionEn)
 	{
-		MPU6050_WriteReg(MPU6050_MOT_THR, 0x08);	//运动阈值 ~16mg，便于演示触发
-		MPU6050_WriteReg(MPU6050_MOT_DUR, 0x01);	//持续 1ms
+		MPU6050_WriteReg(MPU6050_MOT_THR, 0x28);	//运动阈值 ~80mg
+		MPU6050_WriteReg(MPU6050_MOT_DUR, 0x0A);	//持续 10ms
 		MPU6050_WriteReg(MPU6050_MOT_DETECT_CTRL, 0x00);
 		enable |= 0x80;								//MOT_EN
 	}

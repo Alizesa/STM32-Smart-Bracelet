@@ -421,9 +421,7 @@ int main(void)
 	Pedometer_Init();
 	Motion_Init();
 
-	/* 抬腕/跌倒硬件中断: MPU6050 INT脚需飞线到 PinMap.h 的 MPU6050_INT_PIN(默认PB12) */
-	Motion_IntPinInit();        /* 先配EXTI */
-	MPU6050_EnableInt(1, 1);    /* 再使能运动 + 自由落体中断 */
+	/* 跌倒检测使用连续加速度采样的软件算法，不依赖 MPU6050 INT 接线。 */
 
 	/* create application tasks */
 	xTaskCreate(Key_ScanTask,    "KeyScan",  128, NULL, 3, NULL);

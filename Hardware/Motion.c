@@ -4,7 +4,9 @@
   * 基于 MPU6050 加速度计数据 (满量程 +/-16g, 1g = 2048 LSB):
   *   - 抬腕: 腕部姿态角由"大角度下垂"快速变为"面向使用者"并保持
   *           一段时间 -> 判定为一次抬腕.
- *   - 跌倒: MPU6050运动中断直接触发告警，用于演示项目的明显动作反馈.
+  *   - 跌倒: 先出现自由落体(合成加速度接近0), 紧接着出现落地冲击
+  *           (>3g), 随后约1.5s内保持静止(加速度稳定在1g附近)
+  *           -> 判定为跌倒.
   *
   * 硬件中断(需把MPU6050 INT脚飞线到 PinMap.h 的 MPU6050_INT_*):
   *   MPU6050 在检测到运动/自由落体时会在 INT 脚输出脉冲, 触发 EXTI。
@@ -27,6 +29,14 @@
 #define RAISE_UP_DEG        25.0f       /* 小于此角度视为面向使用者 */
 #define RAISE_DWELL_MS      200         /* 保持面向使用者 200ms 才确认 */
 
+/* ---- 跌倒阈值 (LSB) ---- */
+#define FALL_FREE_LSB       900         /* < ~0.44g 视为失重 */
+#define FALL_IMPACT_LSB     4200        /* > ~2.0g 视为撞击 */
+#define FALL_FREE_MS        40          /* 失重需持续 40ms */
+#define FALL_STILL_MS       800         /* 冲击后静止观察窗口 */
+#define FALL_STILL_LSB      600         /* 窗口内偏离1g的容差 */
+#define FALL_IMPACT_WINDOW_MS 700       /* 剧烈运动到撞击的最大间隔 */
+#define FALL_IMPACT_DELTA_LSB 3000      /* 20ms内约1.5g的三轴突变视为冲击 */
 #define FALL_CLEAR_MS       8000        /* 跌倒告警自动复位时间 */
 
 /* ---- 运动检测 (用于运动亮屏/静止自动息屏) ---- */
@@ -44,6 +54,7 @@ static uint32_t HwFreeFallMs;
 
 /* 运动检测状态(相邻采样加速度变化) */
 static uint32_t LastMotionMs;
+static uint32_t LastStrongImpactMs;
 static int16_t PrevAx, PrevAy, PrevAz;
 static uint8_t HavePrevSample;
 
@@ -57,6 +68,7 @@ void Motion_Init(void)
 	MotionIntFlag = 0;
 	HwFreeFallMs = 0;
 	LastMotionMs = 0;
+	LastStrongImpactMs = 0;
 	HavePrevSample = 0;
 	PrevAx = PrevAy = PrevAz = 0;
 }
@@ -64,7 +76,7 @@ void Motion_Init(void)
 /**
   * @brief 初始化MPU6050 INT引脚对应的EXTI(抬腕/跌倒硬件中断).
   * @note  需先把MPU6050的INT脚飞线到 PinMap.h 中 MPU6050_INT_* 指定的引脚(默认PB12)。
-  *        MPU6050配置为高有效锁存中断，只使用上升沿触发。
+  *        使用上升+下降双边沿, 兼容高/低有效两种INT输出。
   */
 void Motion_IntPinInit(void)
 {
@@ -84,7 +96,7 @@ void Motion_IntPinInit(void)
 
 	EXTI_InitStructure.EXTI_Line = MPU6050_INT_EXTI_LINE;
 	EXTI_InitStructure.EXTI_Mode = EXTI_Mode_Interrupt;
-	EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Rising;
+	EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Rising_Falling;
 	EXTI_InitStructure.EXTI_LineCmd = ENABLE;
 	EXTI_Init(&EXTI_InitStructure);
 
@@ -142,6 +154,63 @@ static void Wrist_Update(float pitch, uint32_t now_ms)
 	}
 }
 
+static void Fall_Update(float mag, uint32_t now_ms)
+{
+	static uint8_t armed = 0;
+	static uint32_t armTime = 0;
+	static uint8_t postImpact = 0;
+	static uint32_t postImpactTime = 0;
+	static int32_t maxDev = 0;
+
+	if (FallAlarm && (uint32_t)(now_ms - FallAlarmTime) >= FALL_CLEAR_MS)
+	{
+		FallAlarm = 0;
+	}
+
+	if (mag < FALL_FREE_LSB)
+	{
+		if (!armed)
+		{
+			armed = 1;
+			armTime = now_ms;
+		}
+	}
+	else
+	{
+		if ((armed && (uint32_t)(now_ms - armTime) >= FALL_FREE_MS &&
+			 mag > FALL_IMPACT_LSB) ||
+			(LastStrongImpactMs != 0 &&
+			 (uint32_t)(now_ms - LastStrongImpactMs) < FALL_IMPACT_WINDOW_MS))
+		{
+			postImpact = 1;
+			postImpactTime = now_ms;
+			maxDev = 0;
+			armed = 0;
+			return;
+		}
+		armed = 0;
+	}
+
+	if (postImpact)
+	{
+		int32_t dev = (int32_t)fabsf(mag - GRAVITY_LSB);
+		if (dev > maxDev)
+		{
+			maxDev = dev;
+		}
+
+		if ((uint32_t)(now_ms - postImpactTime) >= FALL_STILL_MS)
+		{
+			if (maxDev < FALL_STILL_LSB)
+			{
+				FallAlarm = 1;
+				FallAlarmTime = now_ms;
+			}
+			postImpact = 0;
+		}
+	}
+}
+
 /**
   * @brief 喂入一个加速度计采样, 更新抬腕/跌倒检测与姿态角.
   * @param  ax, ay, az  MPU6050 原始 16 位加速度数据
@@ -154,6 +223,7 @@ void Motion_Update(int16_t ax, int16_t ay, int16_t az, uint32_t now_ms)
 	float azf = (float)az;
 	float pitch = atan2f(-axf, sqrtf(ayf * ayf + azf * azf)) * 180.0f / PI_F;
 	float roll  = atan2f(ayf, azf) * 180.0f / PI_F;
+	float mag   = sqrtf(axf * axf + ayf * ayf + azf * azf);
 
 	/* 处理MPU6050硬件中断: 读取INT_STATUS确认来源并自动清除 */
 	if (MotionIntFlag)
@@ -162,17 +232,7 @@ void Motion_Update(int16_t ax, int16_t ay, int16_t az, uint32_t now_ms)
 
 		MotionIntFlag = 0;
 		st = MPU6050_ReadIntStatus();
-		if (st & 0x40)
-		{
-			HwFreeFallMs = now_ms;
-			FallAlarm = 1;
-			FallAlarmTime = now_ms;
-		}
-		if (st & 0x80)
-		{
-			FallAlarm = 1;
-			FallAlarmTime = now_ms;
-		}
+		if (st & 0x40) { HwFreeFallMs = now_ms; }
 	}
 
 	PitchDeg10 = (int16_t)(pitch * 10.0f);
@@ -194,6 +254,10 @@ void Motion_Update(int16_t ax, int16_t ay, int16_t az, uint32_t now_ms)
 		{
 			LastMotionMs = now_ms;
 		}
+		if (delta > FALL_IMPACT_DELTA_LSB)
+		{
+			LastStrongImpactMs = now_ms;
+		}
 	}
 	PrevAx = ax;
 	PrevAy = ay;
@@ -201,10 +265,7 @@ void Motion_Update(int16_t ax, int16_t ay, int16_t az, uint32_t now_ms)
 	HavePrevSample = 1;
 
 	Wrist_Update(pitch, now_ms);
-	if (FallAlarm && (uint32_t)(now_ms - FallAlarmTime) >= FALL_CLEAR_MS)
-	{
-		FallAlarm = 0;
-	}
+	Fall_Update(mag, now_ms);
 }
 
 uint8_t Motion_IsMotionRecent(uint32_t windowMs)
