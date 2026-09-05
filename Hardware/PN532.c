@@ -149,16 +149,16 @@ static uint8_t PN532_ReadFrame(uint8_t *payload, uint8_t maxLen,
 
 		if (buf[0] != 0xD5) continue;                       /* not a response */
 
-		/* payload = [echo, data...] (DCS excluded) */
-		if ((len - 2) > maxLen)
+		/* buf contains TFI + response code + data; DCS was read separately. */
+		if ((len - 1) > maxLen)
 		{
 			return 1;
 		}
-		for (i = 0; i < (len - 2); i++)
+		for (i = 0; i < (len - 1); i++)
 		{
 			payload[i] = buf[1 + i];
 		}
-		*payloadLen = len - 2;
+		*payloadLen = len - 1;
 		return 0;
 	}
 }
