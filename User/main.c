@@ -255,11 +255,11 @@ void NFC_Task(void *pvParameters)
 			}
 		}
 
-		if (((uint32_t)xTaskGetTickCount() - lastPoll) >= 1000)
+		if (((uint32_t)xTaskGetTickCount() - lastPoll) >= 500)
 		{
 			lastPoll = (uint32_t)xTaskGetTickCount();
 
-			if (PN532_ReadPassiveTargetID(uid, &uidLen, 1200) == 0)
+			if (PN532_ReadPassiveTargetID(uid, &uidLen, 700) == 0)
 			{
 				taskENTER_CRITICAL();
 				gNfcUidLen = uidLen;

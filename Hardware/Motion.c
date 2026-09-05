@@ -35,8 +35,6 @@
 #define FALL_FREE_MS        40          /* 失重需持续 40ms */
 #define FALL_STILL_MS       800         /* 冲击后静止观察窗口 */
 #define FALL_STILL_LSB      600         /* 窗口内偏离1g的容差 */
-#define FALL_IMPACT_WINDOW_MS 700       /* 剧烈运动到撞击的最大间隔 */
-#define FALL_IMPACT_DELTA_LSB 3000      /* 20ms内约1.5g的三轴突变视为冲击 */
 #define FALL_CLEAR_MS       8000        /* 跌倒告警自动复位时间 */
 
 /* ---- 运动检测 (用于运动亮屏/静止自动息屏) ---- */
@@ -54,7 +52,6 @@ static uint32_t HwFreeFallMs;
 
 /* 运动检测状态(相邻采样加速度变化) */
 static uint32_t LastMotionMs;
-static uint32_t LastStrongImpactMs;
 static int16_t PrevAx, PrevAy, PrevAz;
 static uint8_t HavePrevSample;
 
@@ -68,7 +65,6 @@ void Motion_Init(void)
 	MotionIntFlag = 0;
 	HwFreeFallMs = 0;
 	LastMotionMs = 0;
-	LastStrongImpactMs = 0;
 	HavePrevSample = 0;
 	PrevAx = PrevAy = PrevAz = 0;
 }
@@ -177,10 +173,8 @@ static void Fall_Update(float mag, uint32_t now_ms)
 	}
 	else
 	{
-		if ((armed && (uint32_t)(now_ms - armTime) >= FALL_FREE_MS &&
-			 mag > FALL_IMPACT_LSB) ||
-			(LastStrongImpactMs != 0 &&
-			 (uint32_t)(now_ms - LastStrongImpactMs) < FALL_IMPACT_WINDOW_MS))
+		if (armed && (uint32_t)(now_ms - armTime) >= FALL_FREE_MS &&
+			 mag > FALL_IMPACT_LSB)
 		{
 			postImpact = 1;
 			postImpactTime = now_ms;
@@ -253,10 +247,6 @@ void Motion_Update(int16_t ax, int16_t ay, int16_t az, uint32_t now_ms)
 		if (delta > MOTION_DELTA_LSB)
 		{
 			LastMotionMs = now_ms;
-		}
-		if (delta > FALL_IMPACT_DELTA_LSB)
-		{
-			LastStrongImpactMs = now_ms;
 		}
 	}
 	PrevAx = ax;
