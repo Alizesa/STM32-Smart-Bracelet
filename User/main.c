@@ -42,6 +42,7 @@ volatile uint8_t  gHeartSensorOk;
 volatile uint8_t  gHeartFingerPresent;
 volatile uint32_t gHeartSampleCount;
 volatile uint8_t  gNfcOnline;
+volatile uint8_t  gNfcUartRx;
 volatile uint8_t  gNfcDetected;
 volatile uint8_t  gNfcUidLen;
 volatile uint8_t  gNfcUid[8];
@@ -245,6 +246,7 @@ void NFC_Task(void *pvParameters)
 		if (!nfcReady)
 		{
 			nfcReady = (PN532_SAMConfig() == 0);
+			gNfcUartRx = PN532_HasUartRx();
 			gNfcOnline = nfcReady;
 			if (!nfcReady)
 			{
@@ -319,7 +321,8 @@ static void Bluetooth_ProcessCommand(char *cmd)
 	{
 		if (!gNfcOnline)
 		{
-			HC05_SendString("NFC:OFFLINE CHECK UART\r\n");
+			sprintf(buf, "NFC:OFFLINE RX:%u\r\n", (unsigned int)gNfcUartRx);
+			HC05_SendString(buf);
 		}
 		else if (gNfcDetected)
 		{

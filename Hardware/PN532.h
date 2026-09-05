@@ -57,4 +57,6 @@ uint8_t PN532_WriteMifareBlock(uint8_t block, const uint8_t *keyA,
 /* called from USART2_IRQHandler in stm32f10x_it.c */
 void PN532_USART_IRQHandler(void);
 
+uint8_t PN532_HasUartRx(void);
+
 #endif

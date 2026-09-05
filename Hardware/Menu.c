@@ -31,6 +31,7 @@ extern volatile uint8_t  gHeartSensorOk;
 extern volatile uint8_t  gHeartFingerPresent;
 extern volatile uint32_t gHeartSampleCount;
 extern volatile uint8_t  gNfcOnline;
+extern volatile uint8_t  gNfcUartRx;
 extern volatile uint8_t  gNfcDetected;
 extern volatile uint8_t  gNfcUidLen;
 extern volatile uint8_t  gNfcUid[8];
@@ -509,8 +510,8 @@ static void Draw_Nfc(void)
 	if (!gNfcOnline)
 	{
 		OLED_ShowImage(8, 24, 16, 16, Card_16);
-		OLED_ShowString(32, 20, "NO LINK", OLED_8X16);
-		OLED_ShowString(8, 44, "CHECK UART", OLED_6X8);
+		OLED_ShowString(32, 20, gNfcUartRx ? "BAD RX" : "NO RX", OLED_8X16);
+		OLED_ShowString(8, 44, gNfcUartRx ? "CHECK BAUD" : "CHECK TX PA3", OLED_6X8);
 	}
 	else if (gNfcDetected)
 	{

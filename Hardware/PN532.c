@@ -32,6 +32,7 @@
 static volatile uint8_t  RxBuf[PN532_RX_BUF_SIZE];
 static volatile uint16_t RxHead;
 static volatile uint16_t RxTail;
+static volatile uint8_t RxSeen;
 static SemaphoreHandle_t RxSem;
 
 /* ---------- low level helpers ---------- */
@@ -207,6 +208,7 @@ void PN532_USART_IRQHandler(void)
 	{
 		uint8_t data = (uint8_t)USART_ReceiveData(PN532_USART);
 
+		RxSeen = 1;
 		next = (RxHead + 1) & (PN532_RX_BUF_SIZE - 1);
 		if (next != RxTail)
 		{
@@ -230,6 +232,7 @@ void PN532_Init(void)
 
 	RxHead = 0;
 	RxTail = 0;
+	RxSeen = 0;
 
 	RxSem = xSemaphoreCreateCounting(PN532_RX_BUF_SIZE, 0);
 
@@ -282,6 +285,11 @@ void PN532_Init(void)
 	Delay_ms(50);
 }
 
+uint8_t PN532_HasUartRx(void)
+{
+	return RxSeen;
+}
+
 /* ---------- high level API ---------- */
 
 uint8_t PN532_GetFirmwareVersion(uint8_t *ic, uint8_t *ver,
@@ -312,7 +320,7 @@ uint8_t PN532_SAMConfig(void)
 	uint8_t resp[4];
 	uint8_t respLen = 0;
 
-	if (PN532_CommandExchange(0x14, cfg, 3, resp, &respLen, 500))
+	if (PN532_CommandExchange(0x14, cfg, 3, resp, &respLen, 2000))
 	{
 		return 1;
 	}
