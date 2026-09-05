@@ -236,8 +236,6 @@ void NFC_Task(void *pvParameters)
 	uint8_t nfcReady = 0;
 	uint8_t ic, ver, rev, support;
 	uint32_t lastPoll = 0;
-	uint8_t pollType = 0;
-	static const uint8_t pollTypes[] = {0x00, 0x03, 0x01, 0x02};
 	uint8_t i;
 
 	(void)pvParameters;
@@ -257,11 +255,11 @@ void NFC_Task(void *pvParameters)
 			}
 		}
 
-		if (((uint32_t)xTaskGetTickCount() - lastPoll) >= 250)
+		if (((uint32_t)xTaskGetTickCount() - lastPoll) >= 500)
 		{
 			lastPoll = (uint32_t)xTaskGetTickCount();
 
-			if (PN532_ReadPassiveTargetIDType(pollTypes[pollType], uid, &uidLen, 220) == 0)
+			if (PN532_ReadPassiveTargetID(uid, &uidLen, 700) == 0)
 			{
 				taskENTER_CRITICAL();
 				gNfcUidLen = uidLen;
@@ -274,13 +272,9 @@ void NFC_Task(void *pvParameters)
 			}
 			else
 			{
-				if (pollType == (sizeof(pollTypes) - 1))
-				{
-					gNfcDetected = 0;
-					gNfcUidLen = 0;
-				}
+				gNfcDetected = 0;
+				gNfcUidLen = 0;
 			}
-			pollType = (uint8_t)((pollType + 1) % sizeof(pollTypes));
 		}
 		vTaskDelay(pdMS_TO_TICKS(100));
 	}

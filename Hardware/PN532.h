@@ -29,14 +29,6 @@ uint8_t PN532_ReadPassiveTargetID(uint8_t *uid, uint8_t *uidLen,
 		uint32_t timeout_ms);
 
 /**
-  * @brief  Poll a passive target using a PN532 BrTy value.
-  * @param  brTy       0x00=NFC-A, 0x03=NFC-B, 0x01/0x02=FeliCa
-  * @retval 0 success, 1 no card / unsupported response
-  */
-uint8_t PN532_ReadPassiveTargetIDType(uint8_t brTy, uint8_t *uid,
-		uint8_t *uidLen, uint32_t timeout_ms);
-
-/**
   * @brief  Release the current target.
   * @retval 0 success, 1 failure
   */
