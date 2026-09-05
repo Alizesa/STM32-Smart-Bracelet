@@ -106,7 +106,7 @@ static void PN532_SendCommand(uint8_t cmd, const uint8_t *data, uint8_t len)
 static uint8_t PN532_ReadFrame(uint8_t *payload, uint8_t maxLen,
 		uint8_t *payloadLen, uint32_t timeout_ms)
 {
-	uint8_t b, len, lcs, i, sum;
+	uint8_t b, len, lcs, dcs, i, sum;
 	uint8_t buf[PN532_MAX_RESP_LEN];
 
 	for (;;)
@@ -142,10 +142,11 @@ static uint8_t PN532_ReadFrame(uint8_t *payload, uint8_t maxLen,
 			sum += b;
 		}
 
+		/* DCS follows the LEN payload; postamble is the next byte. */
+		if (PN532_ReadByteTimeout(&dcs, timeout_ms)) return 1;
+		if ((uint8_t)(sum + dcs) != 0) continue;             /* bad DCS */
 		if (PN532_ReadByteTimeout(&b, timeout_ms)) return 1;
 		if (b != 0x00) continue;                            /* bad postamble */
-
-		if (sum != 0) continue;                             /* bad DCS */
 
 		if (buf[0] != 0xD5) continue;                       /* not a response */
 
