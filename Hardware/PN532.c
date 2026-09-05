@@ -35,6 +35,12 @@ static volatile uint16_t RxTail;
 static volatile uint8_t RxSeen;
 static SemaphoreHandle_t RxSem;
 
+/* ---------- raw RX capture of the last exchange (diagnostics) ---------- */
+#define PN532_DBG_MAX           64
+static volatile uint8_t  DbgBuf[PN532_DBG_MAX];
+static volatile uint8_t  DbgLen;
+static volatile uint8_t  DbgCap;     /* non-zero while waiting for a response */
+
 /* ---------- low level helpers ---------- */
 
 static void PN532_SendByte(uint8_t data)
@@ -62,6 +68,11 @@ static uint8_t PN532_ReadByteTimeout(uint8_t *byte, uint32_t timeout_ms)
 	*byte = RxBuf[RxTail];
 	RxTail = (RxTail + 1) & (PN532_RX_BUF_SIZE - 1);
 	taskEXIT_CRITICAL();
+
+	if (DbgCap && DbgLen < PN532_DBG_MAX)
+	{
+		DbgBuf[DbgLen++] = *byte;
+	}
 	return 0;
 }
 
@@ -175,12 +186,18 @@ static uint8_t PN532_CommandExchange(uint8_t cmd, const uint8_t *txData,
 	uint8_t resp[PN532_MAX_RESP_LEN];
 	uint8_t respLen = 0;
 
+	/* start a fresh raw-RX capture for this exchange */
+	DbgLen = 0;
+	DbgCap = 1;
+
 	PN532_SendCommand(cmd, txData, txLen);
 
 	if (PN532_ReadFrame(resp, sizeof(resp), &respLen, timeout_ms))
 	{
+		DbgCap = 0;
 		return 1;
 	}
+	DbgCap = 0;
 	if (respLen < 1)
 	{
 		return 1;
@@ -234,6 +251,8 @@ void PN532_Init(void)
 	RxHead = 0;
 	RxTail = 0;
 	RxSeen = 0;
+	DbgLen = 0;
+	DbgCap = 0;
 
 	RxSem = xSemaphoreCreateCounting(PN532_RX_BUF_SIZE, 0);
 
@@ -293,6 +312,28 @@ void PN532_Init(void)
 uint8_t PN532_HasUartRx(void)
 {
 	return RxSeen;
+}
+
+/**
+  * @brief  Copy the raw bytes captured during the most recent command
+  *         exchange (used to diagnose a BAD RX link: baud mismatch, NACK,
+  *         swapped TX/RX or a non-standard PN532 frame).
+  * @param  buf    output buffer
+  * @param  maxLen size of buf
+  * @retval number of bytes copied (0 = nothing was received)
+  */
+uint16_t PN532_DebugGetLastRx(uint8_t *buf, uint16_t maxLen)
+{
+	uint16_t n = ((uint16_t)DbgLen < maxLen) ? (uint16_t)DbgLen : maxLen;
+	uint16_t i;
+
+	taskENTER_CRITICAL();
+	for (i = 0; i < n; i++)
+	{
+		buf[i] = DbgBuf[i];
+	}
+	taskEXIT_CRITICAL();
+	return n;
 }
 
 /* ---------- high level API ---------- */

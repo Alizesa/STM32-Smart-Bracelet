@@ -11,6 +11,7 @@
  */
 #include "stm32f10x.h"
 #include <stdio.h>
+#include <string.h>
 #include "misc.h"     /* NVIC_PriorityGroupConfig */
 #include "Delay.h"
 #include "MyRTC.h"
@@ -46,6 +47,11 @@ volatile uint8_t  gNfcUartRx;
 volatile uint8_t  gNfcDetected;
 volatile uint8_t  gNfcUidLen;
 volatile uint8_t  gNfcUid[8];
+
+/* NFC raw-RX diagnostics: NFC_Task formats a hex dump after a failed
+   SAMConfig, Bluetooth_Task sends it so HC-05 writes stay serialised. */
+static volatile uint8_t  gNfcDumpPending;
+static char              gNfcDumpText[192];
 
 /* 心率AC波形环形缓冲(供Menu.c绘制实时波形) */
 #define HR_WAVE_LEN        64
@@ -237,6 +243,11 @@ void NFC_Task(void *pvParameters)
 	uint8_t nfcReady = 0;
 	uint32_t lastPoll = 0;
 	uint8_t i;
+	uint8_t dbg[64];
+	uint16_t dn;
+	uint16_t j;
+	char *dp;
+	static const char hexc[] = "0123456789ABCDEF";
 
 	(void)pvParameters;
 
@@ -250,6 +261,28 @@ void NFC_Task(void *pvParameters)
 			gNfcOnline = nfcReady;
 			if (!nfcReady)
 			{
+				/* Queue one raw-byte hex dump for Bluetooth_Task so the
+				 * reason for BAD RX is visible on the serial monitor. */
+				dn = PN532_DebugGetLastRx(dbg, sizeof(dbg));
+				if (dn > 0)
+				{
+					taskENTER_CRITICAL();
+					if (!gNfcDumpPending)
+					{
+						dp = gNfcDumpText;
+						dp += sprintf(dp, "NFC-RX:%u:", (unsigned int)dn);
+						for (j = 0; j < dn; j++)
+						{
+							*dp++ = hexc[(dbg[j] >> 4) & 0x0F];
+							*dp++ = hexc[dbg[j] & 0x0F];
+						}
+						*dp++ = '\r';
+						*dp++ = '\n';
+						*dp = '\0';
+						gNfcDumpPending = 1;
+					}
+					taskEXIT_CRITICAL();
+				}
 				vTaskDelay(pdMS_TO_TICKS(500));
 				continue;
 			}
@@ -345,7 +378,7 @@ static void Bluetooth_ProcessCommand(char *cmd)
 void Bluetooth_Task(void *pvParameters)
 {
 	char rxBuf[64];
-	char txBuf[96];
+	char txBuf[200];
 	uint8_t idx = 0;
 	uint32_t lastReport = 0;
 
@@ -353,6 +386,16 @@ void Bluetooth_Task(void *pvParameters)
 
 	for (;;)
 	{
+		/* send a queued NFC raw-RX hex dump (set by NFC_Task on BAD RX) */
+		if (gNfcDumpPending)
+		{
+			taskENTER_CRITICAL();
+			gNfcDumpPending = 0;
+			strcpy(txBuf, gNfcDumpText);
+			taskEXIT_CRITICAL();
+			HC05_SendString(txBuf);
+		}
+
 		if (HC05_RxAvailable() > 0)
 		{
 			char ch = (char)HC05_ReceiveByte(pdMS_TO_TICKS(50));

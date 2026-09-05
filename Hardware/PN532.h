@@ -59,4 +59,10 @@ void PN532_USART_IRQHandler(void);
 
 uint8_t PN532_HasUartRx(void);
 
+/**
+  * @brief  Copy raw bytes captured during the most recent command exchange
+  *         (diagnostics for a BAD RX link). Returns 0 when nothing arrived.
+  */
+uint16_t PN532_DebugGetLastRx(uint8_t *buf, uint16_t maxLen);
+
 #endif
