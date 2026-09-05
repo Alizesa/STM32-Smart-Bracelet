@@ -279,9 +279,13 @@ void PN532_Init(void)
 	Delay_ms(100);
 #endif
 
-	/* wake the module (required after power up / reset) */
+	/* HSU wake-up sequence: two 0x55 bytes followed by idle zero bytes. */
 	PN532_SendByte(0x55);
 	PN532_SendByte(0x55);
+	{
+		uint8_t i;
+		for (i = 0; i < 14; i++) PN532_SendByte(0x00);
+	}
 	Delay_ms(50);
 }
 
