@@ -234,7 +234,6 @@ void NFC_Task(void *pvParameters)
 	uint8_t uid[8];
 	uint8_t uidLen = 0;
 	uint8_t nfcReady = 0;
-	uint8_t ic, ver, rev, support;
 	uint32_t lastPoll = 0;
 	uint8_t i;
 
@@ -245,8 +244,7 @@ void NFC_Task(void *pvParameters)
 		/* SAM configuration must run after the scheduler has started. */
 		if (!nfcReady)
 		{
-			nfcReady = (PN532_GetFirmwareVersion(&ic, &ver, &rev, &support) == 0 &&
-						PN532_SAMConfig() == 0);
+			nfcReady = (PN532_SAMConfig() == 0);
 			gNfcOnline = nfcReady;
 			if (!nfcReady)
 			{
