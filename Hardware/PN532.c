@@ -321,7 +321,9 @@ void PN532_Init(void)
 	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
 	NVIC_Init(&NVIC_InitStructure);
 
-	USART_ITConfig(PN532_USART, USART_IT_RXNE, ENABLE);
+	/* PN532 uses blocking command exchanges; poll RXNE directly so a
+	 * misconfigured USART2 IRQ cannot consume bytes before the parser. */
+	USART_ITConfig(PN532_USART, USART_IT_RXNE, DISABLE);
 	USART_Cmd(PN532_USART, ENABLE);
 
 #if defined(PN532_RST_PORT)
