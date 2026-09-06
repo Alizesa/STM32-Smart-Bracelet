@@ -256,6 +256,7 @@ void NFC_Task(void *pvParameters)
 		/* SAM configuration must run after the scheduler has started. */
 		if (!nfcReady)
 		{
+			PN532_Wakeup();
 			nfcReady = (PN532_SAMConfig() == 0);
 			gNfcUartRx = PN532_HasUartRx();
 			gNfcOnline = nfcReady;

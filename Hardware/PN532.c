@@ -266,6 +266,17 @@ void PN532_USART_IRQHandler(void)
 
 /* ---------- init ---------- */
 
+void PN532_Wakeup(void)
+{
+	uint8_t i;
+
+	/* HSU wake-up: 0x55 0x55 followed by 14 zero bits/bytes. */
+	PN532_SendByte(0x55);
+	PN532_SendByte(0x55);
+	for (i = 0; i < 14; i++) PN532_SendByte(0x00);
+	Delay_ms(100);
+}
+
 void PN532_Init(void)
 {
 	GPIO_InitTypeDef GPIO_InitStructure;
@@ -325,15 +336,9 @@ void PN532_Init(void)
 	Delay_ms(100);
 #endif
 
-	/* HSU wake-up sequence: two 0x55 bytes followed by idle zero bytes. */
-	PN532_SendByte(0x55);
-	PN532_SendByte(0x55);
-	{
-		uint8_t i;
-		for (i = 0; i < 14; i++) PN532_SendByte(0x00);
-	}
+	PN532_Wakeup();
 	/* Allow the oscillator and HSU parser to stabilize after power-up. */
-	Delay_ms(500);
+	Delay_ms(400);
 }
 
 uint8_t PN532_HasUartRx(void)

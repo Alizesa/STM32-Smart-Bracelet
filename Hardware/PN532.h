@@ -5,6 +5,8 @@
 
 void PN532_Init(void);
 
+void PN532_Wakeup(void);
+
 /**
   * @brief  Read the PN532 firmware version.
   * @retval 0 success, 1 failure
