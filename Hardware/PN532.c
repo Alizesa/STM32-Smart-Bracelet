@@ -76,6 +76,16 @@ static uint8_t PN532_ReadByteTimeout(uint8_t *byte, uint32_t timeout_ms)
 	return 0;
 }
 
+static void PN532_FlushRx(void)
+{
+	taskENTER_CRITICAL();
+	RxTail = RxHead;
+	taskEXIT_CRITICAL();
+	while (RxSem != NULL && xSemaphoreTake(RxSem, 0) == pdPASS)
+	{
+	}
+}
+
 /**
   * @brief  Send one complete command frame to the PN532.
   */
@@ -186,6 +196,8 @@ static uint8_t PN532_CommandExchange(uint8_t cmd, const uint8_t *txData,
 	uint8_t resp[PN532_MAX_RESP_LEN];
 	uint8_t respLen = 0;
 
+	/* Discard bytes left by a previous timeout/retry before sending a new frame. */
+	PN532_FlushRx();
 	/* start a fresh raw-RX capture for this exchange */
 	DbgLen = 0;
 	DbgCap = 1;
@@ -308,7 +320,8 @@ void PN532_Init(void)
 		uint8_t i;
 		for (i = 0; i < 14; i++) PN532_SendByte(0x00);
 	}
-	Delay_ms(50);
+	/* Allow the oscillator and HSU parser to stabilize after power-up. */
+	Delay_ms(500);
 }
 
 uint8_t PN532_HasUartRx(void)
