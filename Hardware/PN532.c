@@ -86,12 +86,6 @@ static uint8_t PN532_ReadByteTimeout(uint8_t *byte, uint32_t timeout_ms)
 			return 1;
 		}
 	}
-
-	if (DbgCap && DbgLen < PN532_DBG_MAX)
-	{
-		DbgBuf[DbgLen++] = *byte;
-	}
-	return 0;
 }
 
 static void PN532_FlushRx(void)
