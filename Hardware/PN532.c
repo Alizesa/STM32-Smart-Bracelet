@@ -291,8 +291,10 @@ void PN532_Init(void)
 
 	RxSem = xSemaphoreCreateCounting(PN532_RX_BUF_SIZE, 0);
 
-	RCC_APB2PeriphClockCmd(PN532_USART_GPIO_RCC, ENABLE);
+	RCC_APB2PeriphClockCmd(PN532_USART_GPIO_RCC | RCC_APB2Periph_AFIO, ENABLE);
 	RCC_APB1PeriphClockCmd(PN532_USART_RCC, ENABLE);
+	/* Force USART2 onto its default PA2(TX)/PA3(RX) pins. */
+	GPIO_PinRemapConfig(GPIO_Remap_USART2, DISABLE);
 
 	/* TX: push-pull alternate function */
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
