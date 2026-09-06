@@ -56,18 +56,36 @@ static void PN532_SendByte(uint8_t data)
 
 static uint8_t PN532_ReadByteTimeout(uint8_t *byte, uint32_t timeout_ms)
 {
+	TickType_t start = xTaskGetTickCount();
+	TickType_t wait = pdMS_TO_TICKS(timeout_ms);
+
 	if (RxSem == NULL)
 	{
 		return 1;
 	}
-	if (xSemaphoreTake(RxSem, timeout_ms) != pdPASS)
+	for (;;)
 	{
-		return 1;               /* timeout */
+		/* Poll RXNE as a fallback when USART2 IRQ is masked or mis-vectoring. */
+		if (USART_GetFlagStatus(PN532_USART, USART_FLAG_RXNE) != RESET)
+		{
+			*byte = (uint8_t)USART_ReceiveData(PN532_USART);
+			RxSeen = 1;
+			if (DbgCap && DbgLen < PN532_DBG_MAX) DbgBuf[DbgLen++] = *byte;
+			return 0;
+		}
+		if (xSemaphoreTake(RxSem, pdMS_TO_TICKS(1)) == pdPASS)
+		{
+			taskENTER_CRITICAL();
+			*byte = RxBuf[RxTail];
+			RxTail = (RxTail + 1) & (PN532_RX_BUF_SIZE - 1);
+			taskEXIT_CRITICAL();
+			return 0;
+		}
+		if ((xTaskGetTickCount() - start) >= wait)
+		{
+			return 1;
+		}
 	}
-	taskENTER_CRITICAL();
-	*byte = RxBuf[RxTail];
-	RxTail = (RxTail + 1) & (PN532_RX_BUF_SIZE - 1);
-	taskEXIT_CRITICAL();
 
 	if (DbgCap && DbgLen < PN532_DBG_MAX)
 	{
