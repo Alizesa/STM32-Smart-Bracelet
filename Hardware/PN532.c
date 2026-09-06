@@ -265,8 +265,10 @@ void PN532_Init(void)
 	GPIO_InitStructure.GPIO_Pin = PN532_TX_PIN;
 	GPIO_Init(PN532_TX_PORT, &GPIO_InitStructure);
 
-	/* RX: floating input */
-	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
+	/* RX: pull-up input. A floating input picks up noise and produces a
+	 * stream of garbage bytes (BAD RX) when the module TX is not actually
+	 * connected; with the pull-up an open line idles high -> no RX at all. */
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU;
 	GPIO_InitStructure.GPIO_Pin = PN532_RX_PIN;
 	GPIO_Init(PN532_RX_PORT, &GPIO_InitStructure);
 
