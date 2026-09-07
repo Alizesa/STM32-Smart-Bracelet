@@ -3,3 +3,7 @@ Listings/
 *.uvguix.*
 *.bak
 *.dep
+
+# 本地工具/辅助文件，不入库
+.claude/
+keilkill.bat
