@@ -246,7 +246,9 @@ void NFC_Task(void *pvParameters)
 		if (!nfcReady)
 		{
 			uint8_t fwIc, fwVer, fwRev, fwSupport;
-			PN532_Wakeup();
+			/* Let the module idle briefly before the first query; yield so the
+			 * UI is not frozen by a busy wait while reconnecting. */
+			vTaskDelay(pdMS_TO_TICKS(100));
 			/* The firmware query is the reliable online check (this module
 			 * answers it with a full standard response). Some compatible
 			 * boards only echo SAMConfig without a status byte, so SAM is
