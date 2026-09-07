@@ -258,16 +258,14 @@ void NFC_Task(void *pvParameters)
 		{
 			uint8_t fwIc, fwVer, fwRev, fwSupport;
 			PN532_Wakeup();
-			/* Prime the I2C link with the same firmware query used by the
-			 * validated PN532 reference test before configuring SAM. */
+			/* The firmware query is the reliable online check (this module
+			 * answers it with a full standard response). Some compatible
+			 * boards only echo SAMConfig without a status byte, so SAM is
+			 * configured fire-and-forget and never gates online status. */
 			nfcReady = (PN532_GetFirmwareVersion(&fwIc, &fwVer, &fwRev, &fwSupport) == 0);
 			if (nfcReady)
 			{
-				/* PN532 I2C implementations commonly need one discarded
-				 * SAMConfiguration exchange after wake-up. */
 				(void)PN532_SAMConfig();
-				Delay_ms(10);
-				nfcReady = (PN532_SAMConfig() == 0);
 			}
 			gNfcUartRx = PN532_HasUartRx();
 			gNfcOnline = nfcReady;
