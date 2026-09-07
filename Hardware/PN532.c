@@ -254,7 +254,9 @@ static uint8_t PN532_ReadFrame(uint8_t *payload, uint8_t maxLen,
 			}
 		}
 		if ((xTaskGetTickCount() - start) >= pdMS_TO_TICKS(timeout_ms)) return 1;
-		vTaskDelay(pdMS_TO_TICKS(1));
+		/* Sleep 10 ms between probes while the module is busy: each probe runs
+		 * under vTaskSuspendAll, so probing every 1 ms would starve the UI. */
+		vTaskDelay(pdMS_TO_TICKS(10));
 	}
 }
 
