@@ -121,10 +121,13 @@ static uint8_t PN532_I2C_ReadByte(uint8_t ack)
 	return value;
 }
 
-/* Send one complete host command frame. Returns 0 on success (all ACKed). */
+/* Send one complete host command frame. Returns 0 on success (all ACKed).
+ * The whole transaction runs with the scheduler suspended so a higher
+ * priority task cannot preempt the bit-bang mid-byte and corrupt it. */
 static uint8_t PN532_I2C_WriteFrame(const uint8_t *frame, uint8_t len)
 {
 	uint8_t i, r;
+	vTaskSuspendAll();
 	PN532_I2C_Start();
 	r = PN532_I2C_SendByte((uint8_t)((PN532_I2C_ADDR << 1) | 0));   /* write addr */
 	for (i = 0; r == 0 && i < len; i++)
@@ -133,20 +136,25 @@ static uint8_t PN532_I2C_WriteFrame(const uint8_t *frame, uint8_t len)
 		r = PN532_I2C_SendByte(frame[i]);
 	}
 	PN532_I2C_Stop();
+	xTaskResumeAll();
 	return (r == 0) ? 0 : 1;
 }
 
 /* Try to pull one response chunk. The PN532 NAKs the read address while it
  * has nothing ready; once ACKed, read PN532_I2C_READ_LEN bytes in one
- * transaction (master ACKs all but the last byte). Returns 0 on success. */
+ * transaction (master ACKs all but the last byte). Returns 0 on success.
+ * Scheduler suspended during the transaction for the same reason as above. */
 static uint8_t PN532_I2C_ReadChunk(uint8_t *buffer)
 {
-	uint8_t i;
+	uint8_t i, r;
+	vTaskSuspendAll();
 	PN532_I2C_Start();
-	if (PN532_I2C_SendByte((uint8_t)((PN532_I2C_ADDR << 1) | 1)) != 0)  /* read addr */
+	r = PN532_I2C_SendByte((uint8_t)((PN532_I2C_ADDR << 1) | 1));  /* read addr */
+	if (r != 0)                                 /* NACK = not ready yet */
 	{
 		PN532_I2C_Stop();
-		return 1;                               /* NACK = not ready yet */
+		xTaskResumeAll();
+		return 1;
 	}
 	RxSeen = 1;
 	for (i = 0; i < PN532_I2C_READ_LEN; i++)
@@ -155,6 +163,7 @@ static uint8_t PN532_I2C_ReadChunk(uint8_t *buffer)
 		if (I2C_BusError) break;
 	}
 	PN532_I2C_Stop();
+	xTaskResumeAll();
 	if (I2C_BusError) return 1;
 	return 0;
 }
