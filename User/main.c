@@ -256,8 +256,19 @@ void NFC_Task(void *pvParameters)
 		/* SAM configuration must run after the scheduler has started. */
 		if (!nfcReady)
 		{
+			uint8_t fwIc, fwVer, fwRev, fwSupport;
 			PN532_Wakeup();
-			nfcReady = (PN532_SAMConfig() == 0);
+			/* Prime the I2C link with the same firmware query used by the
+			 * validated PN532 reference test before configuring SAM. */
+			nfcReady = (PN532_GetFirmwareVersion(&fwIc, &fwVer, &fwRev, &fwSupport) == 0);
+			if (nfcReady)
+			{
+				/* PN532 I2C implementations commonly need one discarded
+				 * SAMConfiguration exchange after wake-up. */
+				(void)PN532_SAMConfig();
+				Delay_ms(10);
+				nfcReady = (PN532_SAMConfig() == 0);
+			}
 			gNfcUartRx = PN532_HasUartRx();
 			gNfcOnline = nfcReady;
 			if (!nfcReady)

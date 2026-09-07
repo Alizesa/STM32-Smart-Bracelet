@@ -56,7 +56,7 @@ uint8_t PN532_ReadMifareBlock(uint8_t block, const uint8_t *keyA,
 uint8_t PN532_WriteMifareBlock(uint8_t block, const uint8_t *keyA,
 		const uint8_t *dataIn);
 
-/* called from USART2_IRQHandler in stm32f10x_it.c */
+/* Compatibility hook called from the shared USART2 interrupt handler. */
 void PN532_USART_IRQHandler(void);
 
 uint8_t PN532_HasUartRx(void);

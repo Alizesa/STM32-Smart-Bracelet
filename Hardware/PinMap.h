@@ -15,7 +15,7 @@
  *  MAX30102 (HR/SpO2)    I2C (bit-bang)   PB6 = SCL, PB7 = SDA     (moved from PA8/PA9)
  *  HC-05 Bluetooth       USART1           PA9 = TX, PA10 = RX      (NEW)
  *                        optional:        PA8 = STATE, PA0 = EN
- *  PN532 NFC             USART2           PA2 = TX, PA3 = RX       (NEW)
+ *  PN532 NFC             software I2C     PA2 = SCL, PA3 = SDA    (NEW)
  *                        optional:        PA5 = RST,  PA7 = IRQ
  *
  *  SWD debug             SWDIO/SWCLK      PA13 / PA14
@@ -62,19 +62,16 @@
 //#define HC05_EN_PORT            GPIOA
 //#define HC05_EN_PIN             GPIO_Pin_0
 
-/* -------- PN532 NFC (USART2) -------- */
-#define PN532_USART             USART2
-#define PN532_USART_RCC         RCC_APB1Periph_USART2
-#define PN532_USART_GPIO_RCC    RCC_APB2Periph_GPIOA
-#define PN532_TX_PORT           GPIOA
-#define PN532_TX_PIN            GPIO_Pin_2
-#define PN532_RX_PORT           GPIOA
-#define PN532_RX_PIN            GPIO_Pin_3
+/* -------- PN532 NFC (software I2C) -------- */
+#define PN532_I2C_PORT          GPIOA
+#define PN532_I2C_RCC           RCC_APB2Periph_GPIOA
+#define PN532_I2C_SCL           GPIO_Pin_2
+#define PN532_I2C_SDA           GPIO_Pin_3
 
 /* PN532 optional pins (uncomment to use) */
-//#define PN532_RST_PORT          GPIOA
-//#define PN532_RST_PIN           GPIO_Pin_5
-//#define PN532_IRQ_PORT          GPIOA
-//#define PN532_IRQ_PIN           GPIO_Pin_7
+#define PN532_RST_PORT          GPIOA
+#define PN532_RST_PIN           GPIO_Pin_5
+#define PN532_IRQ_PORT          GPIOA
+#define PN532_IRQ_PIN           GPIO_Pin_7
 
 #endif /* __PINMAP_H */

@@ -1,15 +1,15 @@
 /**
-  * PN532 NFC / RFID module driver (UART interface, USART2)
+  * PN532 NFC / RFID module driver (software I2C interface)
   *
-  * Wiring : PN532 TX  -> PA3 (STM32 RX)
-  *          PN532 RX  -> PA2 (STM32 TX)
+  * Wiring : PN532 SCL -> PA2
+  *          PN532 SDA -> PA3
   *          VCC 3.3V, GND
   *          RST -> PA5, IRQ -> PA7 (optional, see PinMap.h)
   *
-  * The module must be switched to UART mode (its DIP switches / solder
-  * jumpers). Default UART baud rate of the PN532 is 115200.
+  * The module must be switched to I2C mode (its DIP switches / solder
+  * jumpers). PN532 I2C address is 0x24 (7-bit).
   *
-  * UART frame:
+  * PN532 frame (carried over I2C):
   *   host->PN532 : 00 00 FF LEN LCS D4 CMD DATA... DCS 00
   *   PN532->host : 00 00 FF LEN LCS D5 CMD+1 DATA... DCS 00
   *   ACK frame   : 00 00 FF 00 FF 00
@@ -18,22 +18,16 @@
 #include <string.h>
 #include "FreeRTOS.h"
 #include "task.h"
-#include "semphr.h"
 #include "Delay.h"
 #include "PinMap.h"
 #include "PN532.h"
 
-#define PN532_BAUDRATE          115200
-#define PN532_RX_BUF_SIZE       256     /* power of two */
+#define PN532_I2C_ADDR          0x24
+#define PN532_I2C_READ_LEN      40
 #define PN532_MAX_CMD_LEN       32
 #define PN532_MAX_RESP_LEN      64
 
-/* ---------- RX ring buffer + counting semaphore ---------- */
-static volatile uint8_t  RxBuf[PN532_RX_BUF_SIZE];
-static volatile uint16_t RxHead;
-static volatile uint16_t RxTail;
 static volatile uint8_t RxSeen;
-static SemaphoreHandle_t RxSem;
 
 /* ---------- raw RX capture of the last exchange (diagnostics) ---------- */
 #define PN532_DBG_MAX           64
@@ -41,67 +35,134 @@ static volatile uint8_t  DbgBuf[PN532_DBG_MAX];
 static volatile uint8_t  DbgLen;
 static volatile uint8_t  DbgCap;     /* non-zero while waiting for a response */
 
-/* ---------- low level helpers ---------- */
+/* ---------- low level helpers (bit-bang I2C, clock-stretch aware) ----------
+ * Readiness is detected by polling the I2C read address: the PN532 NAKs it
+ * while busy and ACKs it once a response is available. This matches the
+ * reference implementation verified on the bench (no IRQ line needed). */
 
-static void PN532_SendByte(uint8_t data)
+static volatile uint8_t I2C_BusError;
+
+static void PN532_I2C_Delay(void) { Delay_us(1); }
+
+/* Release SCL (open-drain) and wait until the line is actually high so a
+ * slave that stretches the clock is respected. */
+static void PN532_I2C_SCL_Release(void)
 {
-	while (USART_GetFlagStatus(PN532_USART, USART_FLAG_TXE) == RESET)
+	uint32_t guard = 1000;              /* ~1 ms */
+	GPIO_SetBits(PN532_I2C_PORT, PN532_I2C_SCL);
+	while (GPIO_ReadInputDataBit(PN532_I2C_PORT, PN532_I2C_SCL) == Bit_RESET && guard--)
 	{
+		Delay_us(1);
 	}
-	USART_SendData(PN532_USART, data);
-	while (USART_GetFlagStatus(PN532_USART, USART_FLAG_TC) == RESET)
+	if (GPIO_ReadInputDataBit(PN532_I2C_PORT, PN532_I2C_SCL) == Bit_RESET)
 	{
+		I2C_BusError = 1;               /* SCL stuck low */
 	}
+	PN532_I2C_Delay();
 }
 
-static uint8_t PN532_ReadByteTimeout(uint8_t *byte, uint32_t timeout_ms)
-{
-	TickType_t start = xTaskGetTickCount();
-	TickType_t wait = pdMS_TO_TICKS(timeout_ms);
+static void PN532_I2C_SCL_Low(void)  { GPIO_ResetBits(PN532_I2C_PORT, PN532_I2C_SCL); PN532_I2C_Delay(); }
+static void PN532_I2C_SDA_High(void) { GPIO_SetBits(PN532_I2C_PORT, PN532_I2C_SDA); PN532_I2C_Delay(); }
+static void PN532_I2C_SDA_Low(void)  { GPIO_ResetBits(PN532_I2C_PORT, PN532_I2C_SDA); PN532_I2C_Delay(); }
+static uint8_t PN532_I2C_SDA_Read(void) { return GPIO_ReadInputDataBit(PN532_I2C_PORT, PN532_I2C_SDA); }
 
-	if (RxSem == NULL)
-	{
-		return 1;
-	}
-	for (;;)
-	{
-		/* Poll RXNE as a fallback when USART2 IRQ is masked or mis-vectoring. */
-		if (USART_GetFlagStatus(PN532_USART, USART_FLAG_RXNE) != RESET)
-		{
-			*byte = (uint8_t)USART_ReceiveData(PN532_USART);
-			RxSeen = 1;
-			if (DbgCap && DbgLen < PN532_DBG_MAX) DbgBuf[DbgLen++] = *byte;
-			return 0;
-		}
-		if (xSemaphoreTake(RxSem, pdMS_TO_TICKS(1)) == pdPASS)
-		{
-			taskENTER_CRITICAL();
-			*byte = RxBuf[RxTail];
-			RxTail = (RxTail + 1) & (PN532_RX_BUF_SIZE - 1);
-			taskEXIT_CRITICAL();
-			return 0;
-		}
-		if ((xTaskGetTickCount() - start) >= wait)
-		{
-			return 1;
-		}
-	}
+static void PN532_I2C_Start(void)
+{
+	PN532_I2C_SDA_High();
+	PN532_I2C_SCL_Release();
+	PN532_I2C_SDA_Low();
+	PN532_I2C_SCL_Low();
 }
 
-static void PN532_FlushRx(void)
+static void PN532_I2C_Stop(void)
 {
-	taskENTER_CRITICAL();
-	RxTail = RxHead;
-	taskEXIT_CRITICAL();
-	while (RxSem != NULL && xSemaphoreTake(RxSem, 0) == pdPASS)
+	PN532_I2C_SDA_Low();
+	PN532_I2C_SCL_Release();
+	PN532_I2C_SDA_High();
+}
+
+/* Send one byte, MSB first. Returns 0 = ACK, 1 = NACK, 2 = SCL stuck. */
+static uint8_t PN532_I2C_SendByte(uint8_t value)
+{
+	uint8_t i, ack;
+	I2C_BusError = 0;
+	for (i = 0; i < 8; i++)
 	{
+		if (value & 0x80) PN532_I2C_SDA_High(); else PN532_I2C_SDA_Low();
+		value <<= 1;
+		PN532_I2C_SCL_Release();
+		PN532_I2C_SCL_Low();
 	}
+	PN532_I2C_SDA_High();                       /* release SDA for slave ACK */
+	PN532_I2C_SCL_Release();
+	ack = PN532_I2C_SDA_Read();                 /* 0 = ACK, 1 = NACK */
+	PN532_I2C_SCL_Low();
+	PN532_I2C_SDA_High();
+	if (I2C_BusError) return 2;
+	return ack;
+}
+
+/* Read one byte. ack==1 -> master ACKs (keep reading); ack==0 -> NAK (last). */
+static uint8_t PN532_I2C_ReadByte(uint8_t ack)
+{
+	uint8_t i, value = 0;
+	PN532_I2C_SDA_High();                       /* release SDA for the slave */
+	for (i = 0; i < 8; i++)
+	{
+		value <<= 1;
+		PN532_I2C_SCL_Release();
+		if (PN532_I2C_SDA_Read()) value |= 0x01;
+		PN532_I2C_SCL_Low();
+	}
+	if (ack) PN532_I2C_SDA_Low(); else PN532_I2C_SDA_High();  /* ACK=low, NAK=high */
+	PN532_I2C_SCL_Release();
+	PN532_I2C_SCL_Low();
+	PN532_I2C_SDA_High();
+	return value;
+}
+
+/* Send one complete host command frame. Returns 0 on success (all ACKed). */
+static uint8_t PN532_I2C_WriteFrame(const uint8_t *frame, uint8_t len)
+{
+	uint8_t i, r;
+	PN532_I2C_Start();
+	r = PN532_I2C_SendByte((uint8_t)((PN532_I2C_ADDR << 1) | 0));   /* write addr */
+	for (i = 0; r == 0 && i < len; i++)
+	{
+		Delay_us(30);                           /* inter-byte gap */
+		r = PN532_I2C_SendByte(frame[i]);
+	}
+	PN532_I2C_Stop();
+	return (r == 0) ? 0 : 1;
+}
+
+/* Try to pull one response chunk. The PN532 NAKs the read address while it
+ * has nothing ready; once ACKed, read PN532_I2C_READ_LEN bytes in one
+ * transaction (master ACKs all but the last byte). Returns 0 on success. */
+static uint8_t PN532_I2C_ReadChunk(uint8_t *buffer)
+{
+	uint8_t i;
+	PN532_I2C_Start();
+	if (PN532_I2C_SendByte((uint8_t)((PN532_I2C_ADDR << 1) | 1)) != 0)  /* read addr */
+	{
+		PN532_I2C_Stop();
+		return 1;                               /* NACK = not ready yet */
+	}
+	RxSeen = 1;
+	for (i = 0; i < PN532_I2C_READ_LEN; i++)
+	{
+		buffer[i] = PN532_I2C_ReadByte((i == PN532_I2C_READ_LEN - 1) ? 0 : 1);
+		if (I2C_BusError) break;
+	}
+	PN532_I2C_Stop();
+	if (I2C_BusError) return 1;
+	return 0;
 }
 
 /**
   * @brief  Send one complete command frame to the PN532.
   */
-static void PN532_SendCommand(uint8_t cmd, const uint8_t *data, uint8_t len)
+static uint8_t PN532_SendCommand(uint8_t cmd, const uint8_t *data, uint8_t len)
 {
 	uint8_t frame[PN532_MAX_CMD_LEN + 9];
 	uint8_t i, sum;
@@ -123,14 +184,38 @@ static void PN532_SendCommand(uint8_t cmd, const uint8_t *data, uint8_t len)
 	frame[7 + len] = (uint8_t)(0x100 - sum);    /* DCS */
 	frame[8 + len] = 0x00;                      /* postamble */
 
-	for (i = 0; i < 9 + len; i++)
-	{
-		PN532_SendByte(frame[i]);
-	}
+	return PN532_I2C_WriteFrame(frame, 9 + len);
 }
 
 /**
-  * @brief  Read one response frame (skipping ACK frames).
+  * @brief  Scan a response chunk for a complete PN532 response frame
+  *         (00 00 FF LEN LCS D5 ...), skipping any ACK frame before it.
+  * @param  payload     receives [echo cmd, data...] (DCS/postamble excluded)
+  * @retval 0 success, 1 frame not found / does not fit
+  */
+static uint8_t PN532_ExtractFrame(const uint8_t *buf, uint8_t n,
+		uint8_t *payload, uint8_t maxLen, uint8_t *payloadLen)
+{
+	uint8_t i, j, len;
+
+	for (i = 0; i + 5 < n; i++)
+	{
+		if (buf[i] != 0x00 || buf[i + 1] != 0x00 || buf[i + 2] != 0xFF) continue;
+		len = buf[i + 3];
+		if (len == 0) { i += 5; continue; }                 /* ACK frame */
+		if ((uint8_t)(0x100 - len) != buf[i + 4]) continue; /* bad LCS */
+		if (buf[i + 5] != 0xD5) continue;                   /* not a response */
+		if (i + 6 + len > n) break;                         /* chunk too short */
+		if (len - 1 > maxLen) return 1;
+		*payloadLen = len - 1;
+		for (j = 0; j < len - 1; j++) payload[j] = buf[i + 6 + j];
+		return 0;
+	}
+	return 1;
+}
+
+/**
+  * @brief  Read one response frame (polling the I2C read address, no IRQ).
   * @param  payload     output buffer, receives [echo cmd, data..., DCS excluded]
   * @param  maxLen      size of payload buffer
   * @param  payloadLen  number of bytes stored in payload
@@ -140,61 +225,27 @@ static void PN532_SendCommand(uint8_t cmd, const uint8_t *data, uint8_t len)
 static uint8_t PN532_ReadFrame(uint8_t *payload, uint8_t maxLen,
 		uint8_t *payloadLen, uint32_t timeout_ms)
 {
-	uint8_t b, len, lcs, dcs, i;
-	uint8_t buf[PN532_MAX_RESP_LEN];
+	uint8_t buf[PN532_I2C_READ_LEN];
+	uint8_t i, dn;
+	TickType_t start = xTaskGetTickCount();
 
 	for (;;)
 	{
-		/* synchronise to start code: 00 00 FF */
-		if (PN532_ReadByteTimeout(&b, timeout_ms)) return 1;
-		if (b != 0x00) continue;
-		if (PN532_ReadByteTimeout(&b, timeout_ms)) return 1;
-		if (b != 0x00) continue;
-		if (PN532_ReadByteTimeout(&b, timeout_ms)) return 1;
-		if (b != 0xFF) continue;
-
-		/* LEN / LCS */
-		if (PN532_ReadByteTimeout(&len, timeout_ms)) return 1;
-		if (PN532_ReadByteTimeout(&lcs, timeout_ms)) return 1;
-
-		if (len == 0)
+		if (PN532_I2C_ReadChunk(buf) == 0)
 		{
-			/* ACK frame 00 00 FF 00 FF 00 : read postamble, keep waiting */
-			if (lcs != 0xFF) continue;
-			if (PN532_ReadByteTimeout(&b, timeout_ms)) return 1;
-			continue;
+			if (PN532_ExtractFrame(buf, sizeof(buf), payload, maxLen, payloadLen) == 0)
+			{
+				if (DbgCap)
+				{
+					dn = (sizeof(buf) < PN532_DBG_MAX) ? sizeof(buf) : PN532_DBG_MAX;
+					for (i = 0; i < dn; i++) DbgBuf[i] = buf[i];
+					DbgLen = dn;
+				}
+				return 0;
+			}
 		}
-
-		if (len > PN532_MAX_RESP_LEN) return 1;
-
-		for (i = 0; i < len; i++)
-		{
-			if (PN532_ReadByteTimeout(&b, timeout_ms)) return 1;
-			buf[i] = b;
-		}
-
-		/* DCS follows the LEN payload; postamble is the next byte. */
-		if (PN532_ReadByteTimeout(&dcs, timeout_ms)) return 1;
-		/* Some PN532-compatible boards return a non-standard DCS; keep the
-		 * frame when its length and postamble are valid, then verify command echo. */
-		if (PN532_ReadByteTimeout(&b, timeout_ms)) return 1;
-		(void)lcs;
-		(void)dcs;
-		(void)b;
-
-		if (buf[0] != 0xD5) continue;                       /* not a response */
-
-		/* buf contains TFI + response code + data; DCS was read separately. */
-		if ((len - 1) > maxLen)
-		{
-			return 1;
-		}
-		for (i = 0; i < (len - 1); i++)
-		{
-			payload[i] = buf[1 + i];
-		}
-		*payloadLen = len - 1;
-		return 0;
+		if ((xTaskGetTickCount() - start) >= pdMS_TO_TICKS(timeout_ms)) return 1;
+		vTaskDelay(pdMS_TO_TICKS(1));
 	}
 }
 
@@ -208,13 +259,17 @@ static uint8_t PN532_CommandExchange(uint8_t cmd, const uint8_t *txData,
 	uint8_t resp[PN532_MAX_RESP_LEN];
 	uint8_t respLen = 0;
 
-	/* Discard bytes left by a previous timeout/retry before sending a new frame. */
-	PN532_FlushRx();
 	/* start a fresh raw-RX capture for this exchange */
 	DbgLen = 0;
 	DbgCap = 1;
 
-	PN532_SendCommand(cmd, txData, txLen);
+	if (PN532_SendCommand(cmd, txData, txLen))
+	{
+		DbgCap = 0;
+		return 1;
+	}
+	/* PN532 needs a short processing interval before the first read poll. */
+	vTaskDelay(pdMS_TO_TICKS(1));
 
 	if (PN532_ReadFrame(resp, sizeof(resp), &respLen, timeout_ms))
 	{
@@ -239,106 +294,47 @@ static uint8_t PN532_CommandExchange(uint8_t cmd, const uint8_t *txData,
 	return 0;
 }
 
-/* ---------- UART IRQ ---------- */
+/* Kept as a no-op for compatibility with the shared interrupt file. */
 
 void PN532_USART_IRQHandler(void)
 {
-	portBASE_TYPE xHigherPriorityTaskWoken = pdFALSE;
-	uint16_t next;
-
-	if (USART_GetITStatus(PN532_USART, USART_IT_RXNE) != RESET)
-	{
-		uint8_t data = (uint8_t)USART_ReceiveData(PN532_USART);
-
-		RxSeen = 1;
-		next = (RxHead + 1) & (PN532_RX_BUF_SIZE - 1);
-		if (next != RxTail)
-		{
-			RxBuf[RxHead] = data;
-			RxHead = next;
-			xSemaphoreGiveFromISR(RxSem, &xHigherPriorityTaskWoken);
-		}
-		/* full: drop */
-	}
-
-	portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
 /* ---------- init ---------- */
 
 void PN532_Wakeup(void)
 {
-	uint8_t i;
-
-	/* HSU wake-up: 0x55 0x55 followed by 14 zero bits/bytes. */
-	PN532_SendByte(0x55);
-	PN532_SendByte(0x55);
-	for (i = 0; i < 14; i++) PN532_SendByte(0x00);
+	/* I2C mode wakes on a bus transaction; a short idle period is sufficient. */
 	Delay_ms(100);
 }
 
 void PN532_Init(void)
 {
 	GPIO_InitTypeDef GPIO_InitStructure;
-	USART_InitTypeDef USART_InitStructure;
-	NVIC_InitTypeDef NVIC_InitStructure;
 
-	RxHead = 0;
-	RxTail = 0;
 	RxSeen = 0;
 	DbgLen = 0;
 	DbgCap = 0;
+	I2C_BusError = 0;
 
-	RxSem = xSemaphoreCreateCounting(PN532_RX_BUF_SIZE, 0);
-
-	RCC_APB2PeriphClockCmd(PN532_USART_GPIO_RCC | RCC_APB2Periph_AFIO, ENABLE);
-	RCC_APB1PeriphClockCmd(PN532_USART_RCC, ENABLE);
-	/* Force USART2 onto its default PA2(TX)/PA3(RX) pins. */
-	GPIO_PinRemapConfig(GPIO_Remap_USART2, DISABLE);
-
-	/* TX: push-pull alternate function */
-	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_OD;
 	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-	GPIO_InitStructure.GPIO_Pin = PN532_TX_PIN;
-	GPIO_Init(PN532_TX_PORT, &GPIO_InitStructure);
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_2 | GPIO_Pin_3;
+	GPIO_Init(GPIOA, &GPIO_InitStructure);
+	GPIO_SetBits(GPIOA, GPIO_Pin_2 | GPIO_Pin_3);
 
-	/* RX: pull-up input. A floating input picks up noise and produces a
-	 * stream of garbage bytes (BAD RX) when the module TX is not actually
-	 * connected; with the pull-up an open line idles high -> no RX at all. */
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU;
-	GPIO_InitStructure.GPIO_Pin = PN532_RX_PIN;
-	GPIO_Init(PN532_RX_PORT, &GPIO_InitStructure);
-
-	USART_InitStructure.USART_BaudRate = PN532_BAUDRATE;
-	USART_InitStructure.USART_WordLength = USART_WordLength_8b;
-	USART_InitStructure.USART_StopBits = USART_StopBits_1;
-	USART_InitStructure.USART_Parity = USART_Parity_No;
-	USART_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
-	USART_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
-	USART_Init(PN532_USART, &USART_InitStructure);
-
-	NVIC_InitStructure.NVIC_IRQChannel = USART2_IRQn;
-	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 5;   /* >= configMAX_SYSCALL_INTERRUPT_PRIORITY(5), else FreeRTOS assert */
-	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
-	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-	NVIC_Init(&NVIC_InitStructure);
-
-	/* PN532 uses blocking command exchanges; poll RXNE directly so a
-	 * misconfigured USART2 IRQ cannot consume bytes before the parser. */
-	USART_ITConfig(PN532_USART, USART_IT_RXNE, DISABLE);
-	USART_Cmd(PN532_USART, ENABLE);
-
-#if defined(PN532_RST_PORT)
-	/* hardware reset pulse */
+	GPIO_InitStructure.GPIO_Pin = PN532_IRQ_PIN;
+	GPIO_Init(PN532_IRQ_PORT, &GPIO_InitStructure);
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
-	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
 	GPIO_InitStructure.GPIO_Pin = PN532_RST_PIN;
 	GPIO_Init(PN532_RST_PORT, &GPIO_InitStructure);
+	GPIO_SetBits(PN532_RST_PORT, PN532_RST_PIN);
 	GPIO_ResetBits(PN532_RST_PORT, PN532_RST_PIN);
-	Delay_ms(10);
+	Delay_ms(40);
 	GPIO_SetBits(PN532_RST_PORT, PN532_RST_PIN);
 	Delay_ms(100);
-#endif
 
 	PN532_Wakeup();
 	/* Allow the oscillator and HSU parser to stabilize after power-up. */
