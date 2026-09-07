@@ -56,15 +56,6 @@ uint8_t PN532_ReadMifareBlock(uint8_t block, const uint8_t *keyA,
 uint8_t PN532_WriteMifareBlock(uint8_t block, const uint8_t *keyA,
 		const uint8_t *dataIn);
 
-/* Compatibility hook called from the shared USART2 interrupt handler. */
-void PN532_USART_IRQHandler(void);
-
 uint8_t PN532_HasUartRx(void);
-
-/**
-  * @brief  Copy raw bytes captured during the most recent command exchange
-  *         (diagnostics for a BAD RX link). Returns 0 when nothing arrived.
-  */
-uint16_t PN532_DebugGetLastRx(uint8_t *buf, uint16_t maxLen);
 
 #endif

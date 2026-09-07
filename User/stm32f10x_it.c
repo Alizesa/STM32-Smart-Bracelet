@@ -24,7 +24,6 @@
 /* Includes ------------------------------------------------------------------*/
 #include "stm32f10x_it.h"
 #include "HC05.h"
-#include "PN532.h"
 #include "Motion.h"
 
 /** @addtogroup STM32F10x_StdPeriph_Template
@@ -127,16 +126,6 @@ void DebugMon_Handler(void)
 void USART1_IRQHandler(void)
 {
   HC05_USART_IRQHandler();
-}
-
-/**
-  * @brief  This function handles USART2 global interrupt (PN532 NFC).
-  * @param  None
-  * @retval None
-  */
-void USART2_IRQHandler(void)
-{
-  PN532_USART_IRQHandler();
 }
 
 /**

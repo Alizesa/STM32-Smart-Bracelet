@@ -511,7 +511,7 @@ static void Draw_Nfc(void)
 	{
 		OLED_ShowImage(8, 24, 16, 16, Card_16);
 		OLED_ShowString(32, 20, gNfcUartRx ? "BAD RX" : "NO RX", OLED_8X16);
-		OLED_ShowString(8, 44, gNfcUartRx ? "CHECK BAUD" : "CHECK TX PA3", OLED_6X8);
+		OLED_ShowString(8, 44, gNfcUartRx ? "FRAME ERR" : "I2C/MODE?", OLED_6X8);
 	}
 	else if (gNfcDetected)
 	{

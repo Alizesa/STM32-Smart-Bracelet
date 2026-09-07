@@ -3,8 +3,8 @@
   *
   * Wiring : PN532 SCL -> PA2
   *          PN532 SDA -> PA3
-  *          VCC 3.3V, GND
-  *          RST -> PA5, IRQ -> PA7 (optional, see PinMap.h)
+  *          VCC 5V, GND common
+  *          RST -> PA5 (optional, pulsed at init); IRQ not used
   *
   * The module must be switched to I2C mode (its DIP switches / solder
   * jumpers). PN532 I2C address is 0x24 (7-bit).
@@ -28,12 +28,6 @@
 #define PN532_MAX_RESP_LEN      64
 
 static volatile uint8_t RxSeen;
-
-/* ---------- raw RX capture of the last exchange (diagnostics) ---------- */
-#define PN532_DBG_MAX           64
-static volatile uint8_t  DbgBuf[PN532_DBG_MAX];
-static volatile uint8_t  DbgLen;
-static volatile uint8_t  DbgCap;     /* non-zero while waiting for a response */
 
 /* ---------- low level helpers (bit-bang I2C, clock-stretch aware) ----------
  * Readiness is detected by polling the I2C read address: the PN532 NAKs it
@@ -235,7 +229,6 @@ static uint8_t PN532_ReadFrame(uint8_t *payload, uint8_t maxLen,
 		uint8_t *payloadLen, uint32_t timeout_ms)
 {
 	uint8_t buf[PN532_I2C_READ_LEN];
-	uint8_t i, dn;
 	TickType_t start = xTaskGetTickCount();
 
 	for (;;)
@@ -244,12 +237,6 @@ static uint8_t PN532_ReadFrame(uint8_t *payload, uint8_t maxLen,
 		{
 			if (PN532_ExtractFrame(buf, sizeof(buf), payload, maxLen, payloadLen) == 0)
 			{
-				if (DbgCap)
-				{
-					dn = (sizeof(buf) < PN532_DBG_MAX) ? sizeof(buf) : PN532_DBG_MAX;
-					for (i = 0; i < dn; i++) DbgBuf[i] = buf[i];
-					DbgLen = dn;
-				}
 				return 0;
 			}
 		}
@@ -270,13 +257,8 @@ static uint8_t PN532_CommandExchange(uint8_t cmd, const uint8_t *txData,
 	uint8_t resp[PN532_MAX_RESP_LEN];
 	uint8_t respLen = 0;
 
-	/* start a fresh raw-RX capture for this exchange */
-	DbgLen = 0;
-	DbgCap = 1;
-
 	if (PN532_SendCommand(cmd, txData, txLen))
 	{
-		DbgCap = 0;
 		return 1;
 	}
 	/* PN532 needs a short processing interval before the first read poll. */
@@ -284,10 +266,8 @@ static uint8_t PN532_CommandExchange(uint8_t cmd, const uint8_t *txData,
 
 	if (PN532_ReadFrame(resp, sizeof(resp), &respLen, timeout_ms))
 	{
-		DbgCap = 0;
 		return 1;
 	}
-	DbgCap = 0;
 	if (respLen < 1)
 	{
 		return 1;
@@ -305,12 +285,6 @@ static uint8_t PN532_CommandExchange(uint8_t cmd, const uint8_t *txData,
 	return 0;
 }
 
-/* Kept as a no-op for compatibility with the shared interrupt file. */
-
-void PN532_USART_IRQHandler(void)
-{
-}
-
 /* ---------- init ---------- */
 
 void PN532_Wakeup(void)
@@ -324,8 +298,6 @@ void PN532_Init(void)
 	GPIO_InitTypeDef GPIO_InitStructure;
 
 	RxSeen = 0;
-	DbgLen = 0;
-	DbgCap = 0;
 	I2C_BusError = 0;
 
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
@@ -355,28 +327,6 @@ void PN532_Init(void)
 uint8_t PN532_HasUartRx(void)
 {
 	return RxSeen;
-}
-
-/**
-  * @brief  Copy the raw bytes captured during the most recent command
-  *         exchange (used to diagnose a BAD RX link: baud mismatch, NACK,
-  *         swapped TX/RX or a non-standard PN532 frame).
-  * @param  buf    output buffer
-  * @param  maxLen size of buf
-  * @retval number of bytes copied (0 = nothing was received)
-  */
-uint16_t PN532_DebugGetLastRx(uint8_t *buf, uint16_t maxLen)
-{
-	uint16_t n = ((uint16_t)DbgLen < maxLen) ? (uint16_t)DbgLen : maxLen;
-	uint16_t i;
-
-	taskENTER_CRITICAL();
-	for (i = 0; i < n; i++)
-	{
-		buf[i] = DbgBuf[i];
-	}
-	taskEXIT_CRITICAL();
-	return n;
 }
 
 /* ---------- high level API ---------- */
